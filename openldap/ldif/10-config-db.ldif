@@ -1,0 +1,118 @@
+dn: olcDatabase={-1}frontend,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcFrontendConfig
+olcDatabase: {-1}frontend
+olcSizeLimit: 1000
+olcPasswordHash: {ARGON2}
+
+dn: olcDatabase={0}config,cn=config
+objectClass: olcDatabaseConfig
+olcDatabase: {0}config
+olcAccess: {0}to *
+  by dn.exact=gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth manage
+  by * none
+
+# Service accounts:
+#   svc-sync  : provisioning (the sync service); writes users, entitlements, accounts
+#   svc-auth : authentication gateway and token service; reads users, accounts,
+#              features and OAuth clients
+dn: olcDatabase={1}mdb,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcMdbConfig
+olcDatabase: {1}mdb
+olcDbDirectory: /var/lib/ldap
+olcSuffix: dc=acmeinsurance,dc=com
+olcRootDN: cn=admin,dc=acmeinsurance,dc=com
+olcRootPW: __ADMIN_PW_HASH__
+olcDbMaxSize: 2147483648
+olcDbIndex: objectClass eq
+olcDbIndex: uid,mail,cn eq
+olcDbIndex: acmeAccountDN,acmePolicyNumber,acmeSalesforceId eq
+olcDbIndex: acmeSource,acmeUserType eq
+olcDbIndex: acmeFeatureDN,entryUUID eq
+# The service accounts read whole subtrees (paged); the 1000-entry default
+# would silently truncate a full sync. Everyone else keeps the default.
+olcLimits: {0}dn.exact="cn=svc-sync,ou=services,dc=acmeinsurance,dc=com" size=unlimited time=unlimited
+olcLimits: {1}dn.exact="cn=svc-auth,ou=services,dc=acmeinsurance,dc=com" size.soft=1000 size.hard=unlimited size.prtotal=unlimited
+# OAuth client secrets: svc-auth may test whether a client has one (search),
+# which tells it the client is confidential. Clients have no lockout policy, so
+# this gives nothing a bind would not.
+olcAccess: {0}to dn.subtree="ou=oauth-clients,ou=services,dc=acmeinsurance,dc=com" attrs=userPassword
+  by dn.exact="cn=svc-sync,ou=services,dc=acmeinsurance,dc=com" write
+  by dn.exact="cn=svc-auth,ou=services,dc=acmeinsurance,dc=com" search
+  by anonymous auth
+  by * none
+olcAccess: {1}to attrs=userPassword
+  by dn.exact="cn=svc-sync,ou=services,dc=acmeinsurance,dc=com" write
+  by self write
+  by anonymous auth
+  by * none
+olcAccess: {2}to attrs=acmeUserType,acmeAccountDN,acmeFeatureDN,acmePolicyNumber,pwdPolicySubentry,acmeSalesforceId,acmeSource,acmeDeactivated,pwdAccountLockedTime
+  by dn.exact="cn=svc-sync,ou=services,dc=acmeinsurance,dc=com" write
+  by dn.exact="cn=svc-auth,ou=services,dc=acmeinsurance,dc=com" read
+  by self read
+  by * none
+olcAccess: {3}to dn.subtree="ou=people,dc=acmeinsurance,dc=com"
+  by dn.exact="cn=svc-sync,ou=services,dc=acmeinsurance,dc=com" write
+  by dn.exact="cn=svc-auth,ou=services,dc=acmeinsurance,dc=com" read
+  by self read
+  by * none
+olcAccess: {4}to dn.subtree="ou=accounts,dc=acmeinsurance,dc=com"
+  by dn.exact="cn=svc-sync,ou=services,dc=acmeinsurance,dc=com" write
+  by dn.exact="cn=svc-auth,ou=services,dc=acmeinsurance,dc=com" read
+  by * none
+olcAccess: {5}to dn.subtree="ou=features,dc=acmeinsurance,dc=com"
+  by dn.exact="cn=svc-sync,ou=services,dc=acmeinsurance,dc=com" write
+  by dn.exact="cn=svc-auth,ou=services,dc=acmeinsurance,dc=com" read
+  by * none
+olcAccess: {6}to *
+  by dn.exact="cn=svc-sync,ou=services,dc=acmeinsurance,dc=com" read
+  by dn.exact="cn=svc-auth,ou=services,dc=acmeinsurance,dc=com" read
+  by self read
+  by * none
+
+# Password policy. cn=default applies unless a user's pwdPolicySubentry
+# points at another policy (the sync sets it for agents on create).
+dn: olcOverlay={0}ppolicy,olcDatabase={1}mdb,cn=config
+objectClass: olcOverlayConfig
+objectClass: olcPPolicyConfig
+olcOverlay: {0}ppolicy
+olcPPolicyDefault: cn=default,ou=policies,dc=acmeinsurance,dc=com
+olcPPolicyHashCleartext: TRUE
+olcPPolicyUseLockout: FALSE
+
+# uid and mail are unique across all user types, so a login lookup over
+# ou=people can never match two entries. A Salesforce record may be linked
+# from only one person and only one account entry.
+dn: olcOverlay={1}unique,olcDatabase={1}mdb,cn=config
+objectClass: olcOverlayConfig
+objectClass: olcUniqueConfig
+olcOverlay: {1}unique
+olcUniqueURI: ldap:///ou=people,dc=acmeinsurance,dc=com?uid?sub
+olcUniqueURI: ldap:///ou=people,dc=acmeinsurance,dc=com?mail?sub
+olcUniqueURI: ldap:///ou=people,dc=acmeinsurance,dc=com?acmeSalesforceId?sub
+olcUniqueURI: ldap:///ou=accounts,dc=acmeinsurance,dc=com?acmeSalesforceId?sub
+
+# Referential integrity: when an account entry is deleted, renamed or moved
+# (including a whole agency or agreement subtree), every user's acmeAccountDN
+# values are removed or rewritten to match. The same for features and
+# permissions and acmeFeatureDN.
+dn: olcOverlay={2}refint,olcDatabase={1}mdb,cn=config
+objectClass: olcOverlayConfig
+objectClass: olcRefintConfig
+olcOverlay: {2}refint
+olcRefintAttribute: acmeAccountDN acmeFeatureDN
+
+# A acmeAccountDN value must be the DN of an existing account entry, a
+# acmeFeatureDN value the DN of an existing feature or permission, and
+# acmeUserType must be one of the four user types.
+dn: olcOverlay={3}constraint,olcDatabase={1}mdb,cn=config
+objectClass: olcOverlayConfig
+objectClass: olcConstraintConfig
+olcOverlay: {3}constraint
+olcConstraintAttribute: acmeAccountDN uri
+  ldap:///ou=accounts,dc=acmeinsurance,dc=com?entryDN?sub?(objectClass=acmeAccount)
+olcConstraintAttribute: acmeFeatureDN uri
+  ldap:///ou=features,dc=acmeinsurance,dc=com?entryDN?sub?(|(objectClass=acmeFeature)(objectClass=acmePermission))
+olcConstraintAttribute: acmeUserType regex "^(internal|agent|member|other)$"
+

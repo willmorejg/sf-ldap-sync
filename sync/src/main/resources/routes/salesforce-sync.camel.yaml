@@ -1,0 +1,84 @@
+# Salesforce -> OpenLDAP. All logic lives in SalesforceSyncService; these routes
+# only decide when it runs. With sync.salesforce.enabled=false (SF_ENABLED=false)
+# none of them is created, so the app (and the CSV intake) runs without
+# Salesforce credentials.
+
+# Nightly full comparison. This is the safety net: whatever a missed change event
+# or a manual edit left behind is put right here.
+- route:
+    id: salesforce-sync-scheduled
+    precondition: "{{sync.salesforce.enabled}}"
+    from:
+      uri: quartz:ldapsync/salesforce
+      parameters:
+        cron: "{{sync.schedule.cron}}"
+      steps:
+        - to: bean:salesforceSync?method=fullSync
+        - log: "Scheduled Salesforce sync: ${body}"
+
+# One run shortly after startup (sync.schedule.run-on-startup).
+- route:
+    id: salesforce-sync-startup
+    precondition: "{{sync.salesforce.enabled}}"
+    autoStartup: "{{sync.schedule.run-on-startup}}"
+    from:
+      uri: timer:salesforce-startup
+      parameters:
+        repeatCount: 1
+        delay: 15000
+      steps:
+        - to: bean:salesforceSync?method=fullSync
+        - log: "Startup Salesforce sync: ${body}"
+
+# Manual trigger and last result:
+#   curl -X POST localhost:8080/sync/salesforce
+#   curl localhost:8080/sync/salesforce
+- route:
+    id: salesforce-sync-http
+    precondition: "{{sync.salesforce.enabled}}"
+    from:
+      uri: platform-http:/sync/salesforce
+      steps:
+        - choice:
+            when:
+              - simple: "${header.CamelHttpMethod} == 'POST'"
+                steps:
+                  - to: bean:salesforceSync?method=fullSync
+            otherwise:
+              steps:
+                - to: bean:salesforceSync?method=lastReport
+        - marshal:
+            json:
+              library: Jackson
+              prettyPrint: true
+
+# Near-real-time updates (off by default; sync.cdc.enabled=true). A precondition,
+# not autoStartup, because creating the subscribe endpoint starts the component.
+# Change Data Capture events only mark the sync as dirty; a debounced run then
+# does the usual full comparison, so a burst of edits costs one run.
+# Select Account, User (and AccountContactRelation if used) under
+# Setup > Integrations > Change Data Capture in Salesforce.
+- route:
+    id: salesforce-change-events
+    precondition: "{{sync.salesforce.enabled}} == true && {{sync.cdc.enabled}} == true"
+    from:
+      uri: "salesforce:subscribe:{{sync.cdc.channel}}"
+      parameters:
+        rawPayload: true
+        replayId: -1
+      steps:
+        - to: bean:salesforceSync?method=markDirty
+- route:
+    id: salesforce-sync-debounced
+    precondition: "{{sync.salesforce.enabled}} == true && {{sync.cdc.enabled}} == true"
+    from:
+      uri: timer:salesforce-debounce
+      parameters:
+        period: "{{sync.cdc.debounce-ms}}"
+        delay: 60000
+      steps:
+        - to: bean:salesforceSync?method=runIfDirty
+        - filter:
+            simple: "${body} != null"
+            steps:
+              - log: "Change-triggered Salesforce sync: ${body}"

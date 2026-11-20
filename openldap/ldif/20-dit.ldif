@@ -1,0 +1,160 @@
+# Directory tree. Loaded with slapadd -n1 on first start.
+#
+# dc=acmeinsurance,dc=com
+# |-- ou=people
+# |   |-- ou=internal     home office staff      (CSV / future Entra source)
+# |   |-- ou=agents       brokers and agents     (Salesforce User)
+# |   |-- ou=members      insureds               (CSV / future policy system source)
+# |   `-- ou=other        anyone else            (CSV or by hand)
+# |-- ou=accounts
+# |   |-- ou=agencies     agency > agreement > book tree (Salesforce Account)
+# |   `-- ou=clients      internally generated client IDs (by hand / CSV)
+# |-- ou=features        feature > permission tree, granted with acmeFeatureDN
+# |-- ou=services        svc-sync (write), svc-auth (read)
+# |   `-- ou=oauth-clients  applications registered with the auth service
+# `-- ou=policies        password policies: default, internal, agents, oauth-clients
+
+dn: dc=acmeinsurance,dc=com
+objectClass: dcObject
+objectClass: organization
+dc: acmeinsurance
+o: Acme Insurance
+
+dn: ou=people,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=internal,ou=people,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: internal
+description: Home office staff
+
+dn: ou=agents,ou=people,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: agents
+description: Brokers and agents; maintained from Salesforce User records
+
+dn: ou=members,ou=people,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: members
+description: Insureds
+
+dn: ou=other,ou=people,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: other
+description: Other users authorized for specific systems
+
+dn: ou=accounts,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: accounts
+description: Things users can be authorized for
+
+dn: ou=agencies,ou=accounts,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: agencies
+description: Agency > agreement > book hierarchy, mirrored from Salesforce
+
+dn: ou=clients,ou=accounts,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: clients
+description: Internally generated client IDs
+
+dn: ou=features,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: features
+description: Application features and their permissions
+
+dn: ou=services,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: services
+
+dn: ou=oauth-clients,ou=services,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: oauth-clients
+description: Applications registered with the auth service; cn is the client_id
+
+dn: cn=svc-sync,ou=services,dc=acmeinsurance,dc=com
+objectClass: organizationalRole
+objectClass: simpleSecurityObject
+cn: svc-sync
+description: Provisioning (the sync service); writes users, entitlements and accounts
+userPassword: __SVC_SYNC_PW_HASH__
+
+dn: cn=svc-auth,ou=services,dc=acmeinsurance,dc=com
+objectClass: organizationalRole
+objectClass: simpleSecurityObject
+cn: svc-auth
+description: Authentication gateway; read-only
+userPassword: __SVC_AUTH_PW_HASH__
+
+dn: ou=policies,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: policies
+
+# Members and other users. No expiry, per NIST SP 800-63B. Like the other two
+# policies, a password set by an administrator must be changed at next login.
+dn: cn=default,ou=policies,dc=acmeinsurance,dc=com
+objectClass: device
+objectClass: pwdPolicy
+cn: default
+pwdAttribute: userPassword
+pwdMinLength: 12
+pwdCheckQuality: 2
+pwdMaxAge: 0
+pwdInHistory: 5
+pwdLockout: TRUE
+pwdMaxFailure: 5
+pwdFailureCountInterval: 900
+pwdLockoutDuration: 900
+pwdAllowUserChange: TRUE
+pwdMustChange: TRUE
+
+dn: cn=internal,ou=policies,dc=acmeinsurance,dc=com
+objectClass: device
+objectClass: pwdPolicy
+cn: internal
+pwdAttribute: userPassword
+pwdMinLength: 15
+pwdCheckQuality: 2
+pwdMaxAge: 7776000
+pwdExpireWarning: 1209600
+pwdInHistory: 12
+pwdLockout: TRUE
+pwdMaxFailure: 5
+pwdFailureCountInterval: 1800
+pwdLockoutDuration: 1800
+pwdAllowUserChange: TRUE
+pwdMustChange: TRUE
+
+dn: cn=agents,ou=policies,dc=acmeinsurance,dc=com
+objectClass: device
+objectClass: pwdPolicy
+cn: agents
+pwdAttribute: userPassword
+pwdMinLength: 12
+pwdCheckQuality: 2
+pwdMaxAge: 7776000
+pwdExpireWarning: 1209600
+pwdInHistory: 10
+pwdLockout: TRUE
+pwdMaxFailure: 5
+pwdFailureCountInterval: 900
+pwdLockoutDuration: 900
+pwdAllowUserChange: TRUE
+pwdMustChange: TRUE
+
+# OAuth client secrets. No lockout, so nobody can lock an application out by
+# guessing at its client_id, and no forced change after a reset. Point each
+# confidential client's pwdPolicySubentry here.
+dn: cn=oauth-clients,ou=policies,dc=acmeinsurance,dc=com
+objectClass: device
+objectClass: pwdPolicy
+cn: oauth-clients
+pwdAttribute: userPassword
+pwdMinLength: 32
+pwdCheckQuality: 2
+pwdMaxAge: 0
+pwdInHistory: 0
+pwdLockout: FALSE
+pwdAllowUserChange: FALSE
+pwdMustChange: FALSE

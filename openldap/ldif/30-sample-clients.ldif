@@ -1,0 +1,11 @@
+# Sample client accounts (made-up IDs), loaded only when LOAD_SAMPLES=true.
+# Clients are internal IDs, not Salesforce records, so the sync never touches them.
+dn: cn=100234,ou=clients,ou=accounts,dc=acmeinsurance,dc=com
+objectClass: acmeClientAccount
+cn: 100234
+displayName: Client 100234
+
+dn: cn=100877,ou=clients,ou=accounts,dc=acmeinsurance,dc=com
+objectClass: acmeClientAccount
+cn: 100877
+displayName: Client 100877

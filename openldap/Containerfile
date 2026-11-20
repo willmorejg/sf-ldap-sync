@@ -1,0 +1,31 @@
+# OpenLDAP 2.6 on Ubuntu 24.04 (the configuration was tested against this build),
+# plus phpLDAPadmin 1.2.6 on nginx and php-fpm.
+FROM docker.io/library/ubuntu:24.04
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends slapd ldap-utils \
+      nginx php8.3-fpm phpldapadmin \
+ && rm -rf /var/lib/apt/lists/* /etc/ldap/slapd.d/* /var/lib/ldap/* /etc/nginx/sites-enabled/default
+
+# phpLDAPadmin, served by nginx + php-fpm (started by entrypoint.sh unless PHPLDAPADMIN_ENABLED=false)
+COPY phpldapadmin/config.php /etc/phpldapadmin/config.php
+COPY phpldapadmin/nginx.conf /etc/nginx/sites-enabled/phpldapadmin.conf
+COPY phpldapadmin/php.ini /etc/php/8.3/fpm/conf.d/90-phpldapadmin.ini
+# phpLDAPadmin 1.2.6.7 sets error_reporting(E_ALL) and its handler shows PHP 8.3
+# deprecation notices as error pages; leave deprecations out (fails the build if
+# the line ever changes upstream).
+RUN f=/usr/share/phpldapadmin/lib/common.php \
+ && grep -qx 'error_reporting(E_ALL);' "$f" \
+ && sed -i 's/^error_reporting(E_ALL);$/error_reporting(E_ALL \& ~E_DEPRECATED);/' "$f"
+RUN chown root:www-data /etc/phpldapadmin/config.php && chmod 0640 /etc/phpldapadmin/config.php \
+ && nginx -t
+
+COPY ldif/ /seed/
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+EXPOSE 1389 8080
+VOLUME ["/etc/ldap/slapd.d", "/var/lib/ldap"]
+HEALTHCHECK --interval=10s --timeout=3s --retries=6 \
+  CMD ldapsearch -x -H ldap://127.0.0.1:1389 -b "" -s base -LLL namingContexts >/dev/null || exit 1
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -1,0 +1,3 @@
+uid,givenName,sn,mail,policyNumbers,active
+m100001,Mary,Miller,mary.miller@example.com,PA-0012345|HO-0098765,true
+m100002,Sam,Yoder,sam.yoder@example.com,FM-0045678,true

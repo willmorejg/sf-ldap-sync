@@ -1,0 +1,60 @@
+# Sample features (the hierarchy in docs/LDAP_Schema_Definition.md), loaded when
+# LOAD_SAMPLES=true or LOAD_SAMPLE_AGENCIES=true.
+#
+#   ou=features
+#   |-- cn=quoting       read-quotes, write-quotes
+#   |-- cn=claims        view-claims, adjust-claims, approve-claims
+#   `-- cn=underwriting  review-applications, approve-policies
+#
+# Grant the whole feature (cn=quoting,...) or one permission (cn=read-quotes,...)
+# through an agent's acmeFeatureDN; the token service turns grants into the
+# "features" claim, e.g. {"quoting": ["read-quotes", "write-quotes"]}.
+dn: cn=quoting,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmeFeature
+cn: quoting
+displayName: Quoting
+
+dn: cn=read-quotes,cn=quoting,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmePermission
+cn: read-quotes
+displayName: Read quotes
+
+dn: cn=write-quotes,cn=quoting,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmePermission
+cn: write-quotes
+displayName: Write quotes
+
+dn: cn=claims,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmeFeature
+cn: claims
+displayName: Claims
+
+dn: cn=view-claims,cn=claims,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmePermission
+cn: view-claims
+displayName: View claims
+
+dn: cn=adjust-claims,cn=claims,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmePermission
+cn: adjust-claims
+displayName: Adjust claims
+
+dn: cn=approve-claims,cn=claims,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmePermission
+cn: approve-claims
+displayName: Approve claims
+
+dn: cn=underwriting,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmeFeature
+cn: underwriting
+displayName: Underwriting
+
+dn: cn=review-applications,cn=underwriting,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmePermission
+cn: review-applications
+displayName: Review applications
+
+dn: cn=approve-policies,cn=underwriting,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmePermission
+cn: approve-policies
+displayName: Approve policies

@@ -1,0 +1,80 @@
+# podman compose up --build -d
+# Ports are bound to localhost only.
+
+# podman-compose: no pod, so sync can have its own user namespace (userns_mode).
+x-podman:
+  in_pod: false
+
+services:
+  openldap:
+    build: ./openldap
+    environment:
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD:?set in .env}
+      SVC_SYNC_PASSWORD: ${SVC_SYNC_PASSWORD:?set in .env}
+      SVC_AUTH_PASSWORD: ${SVC_AUTH_PASSWORD:?set in .env}
+      LOAD_SAMPLES: ${LOAD_SAMPLES:-true}
+      LOAD_SAMPLE_AGENCIES: ${LOAD_SAMPLE_AGENCIES:-false}
+      # Optional: creates the sample confidential OAuth client demo-app (32+ chars).
+      OAUTH_DEMO_CLIENT_SECRET: ${OAUTH_DEMO_CLIENT_SECRET:-}
+      # phpLDAPadmin (nginx + php-fpm in this container) at http://localhost:8090/
+      PHPLDAPADMIN_ENABLED: ${PHPLDAPADMIN_ENABLED:-true}
+    ports:
+      - "127.0.0.1:1389:1389"
+      - "127.0.0.1:8090:8080"
+    volumes:
+      - ldap-config:/etc/ldap/slapd.d
+      - ldap-data:/var/lib/ldap
+    # Defined here, not only in the Containerfile: podman builds OCI images,
+    # which drop HEALTHCHECK, and sync waits for this service to be healthy.
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://127.0.0.1:1389 -b '' -s base -LLL namingContexts >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+  sync:
+    build: ./sync
+    depends_on:
+      openldap:
+        condition: service_healthy
+    environment:
+      LDAP_URL: ldap://openldap:1389
+      SVC_SYNC_PASSWORD: ${SVC_SYNC_PASSWORD:?set in .env}
+      SF_ENABLED: ${SF_ENABLED:-true}
+      SF_LOGIN_URL: ${SF_LOGIN_URL:-}
+      SF_CLIENT_ID: ${SF_CLIENT_ID:-}
+      SF_CLIENT_SECRET: ${SF_CLIENT_SECRET:-}
+      DRY_RUN: ${DRY_RUN:-true}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./inbox:/work/inbox:Z
+    # Rootless Podman: map your host user to the container's uid 1001 so the
+    # sync can lock, move and create files in ./inbox (otherwise the host
+    # owner appears as root in the container and the inbox is read-only).
+    userns_mode: "keep-id:uid=1001,gid=0"
+    restart: unless-stopped
+
+  auth:
+    build: ./auth
+    depends_on:
+      openldap:
+        condition: service_healthy
+    environment:
+      LDAP_URL: ldap://openldap:1389
+      SVC_AUTH_PASSWORD: ${SVC_AUTH_PASSWORD:?set in .env}
+      # Public base URL of the token service: the "iss" of every token.
+      AUTH_ISSUER: ${AUTH_ISSUER:-http://localhost:8081}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE:-acmeinsurance}
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - auth-keys:/keys
+    restart: unless-stopped
+
+volumes:
+  ldap-config:
+  ldap-data:
+  auth-keys:

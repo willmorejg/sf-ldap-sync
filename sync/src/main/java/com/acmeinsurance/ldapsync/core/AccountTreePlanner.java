@@ -1,0 +1,97 @@
+package com.acmeinsurance.ldapsync.core;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * Works out where each agency, agreement and book belongs in the directory tree
+ * (agency &gt; agreement &gt; book under ou=agencies) and rejects records that
+ * cannot be placed. Pure logic: no LDAP access.
+ */
+public final class AccountTreePlanner {
+
+    /** A record that has a place in the tree. */
+    public record Planned(AccountNode node, String dn, String parentDn) {
+    }
+
+    public record Rejected(AccountNode node, String reason) {
+    }
+
+    /**
+     * @param ordered  placeable records, parents always before their children
+     * @param rejected records that could not be placed, with the reason
+     * @param seenIds  every Salesforce ID in the input, placed or not; the sync
+     *                 never removes a directory entry whose ID is in this set
+     */
+    public record Plan(List<Planned> ordered, List<Rejected> rejected, Set<String> seenIds) {
+    }
+
+    private AccountTreePlanner() {
+    }
+
+    public static Plan plan(Collection<AccountNode> nodes, String agenciesDn) {
+        Map<String, AccountNode> byId = new LinkedHashMap<>();
+        List<Rejected> rejected = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (AccountNode n : nodes) {
+            seen.add(n.sfId());
+            if (byId.putIfAbsent(n.sfId(), n) != null) {
+                rejected.add(new Rejected(n, "duplicate Salesforce ID in the query result"));
+            }
+        }
+
+        Map<String, String> dnById = new HashMap<>();
+        Set<String> usedDns = new HashSet<>();
+        List<Planned> ordered = new ArrayList<>();
+        Comparator<AccountNode> byCnThenId = Comparator.comparing(AccountNode::cn).thenComparing(AccountNode::sfId);
+
+        for (AccountLevel level : AccountLevel.values()) {
+            List<AccountNode> atLevel = byId.values().stream()
+                    .filter(n -> n.level() == level)
+                    .sorted(byCnThenId)
+                    .toList();
+            for (AccountNode n : atLevel) {
+                String parentDn;
+                if (level.parent() == null) {
+                    parentDn = agenciesDn;
+                } else {
+                    if (n.parentSfId() == null) {
+                        rejected.add(new Rejected(n, level.label() + " has no parent " + level.parent().label()));
+                        continue;
+                    }
+                    AccountNode parent = byId.get(n.parentSfId());
+                    if (parent == null) {
+                        rejected.add(new Rejected(n, "parent " + n.parentSfId() + " is not in the query result"));
+                        continue;
+                    }
+                    if (parent.level() != level.parent()) {
+                        rejected.add(new Rejected(n, "parent " + parent.sfId() + " is a " + parent.level().label()
+                                + "; a " + level.label() + " must sit under a " + level.parent().label()));
+                        continue;
+                    }
+                    parentDn = dnById.get(parent.sfId());
+                    if (parentDn == null) {
+                        rejected.add(new Rejected(n, "parent " + parent.sfId() + " was itself rejected"));
+                        continue;
+                    }
+                }
+                String dn = Dns.child("cn", n.cn(), parentDn);
+                if (!usedDns.add(dn.toLowerCase(Locale.ROOT))) {
+                    rejected.add(new Rejected(n, "cn '" + n.cn() + "' is already used by another record under the same parent"));
+                    continue;
+                }
+                dnById.put(n.sfId(), dn);
+                ordered.add(new Planned(n, dn, parentDn));
+            }
+        }
+        return new Plan(ordered, rejected, seen);
+    }
+}

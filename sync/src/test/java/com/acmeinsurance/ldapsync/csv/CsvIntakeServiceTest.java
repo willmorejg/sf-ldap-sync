@@ -1,0 +1,152 @@
+package com.acmeinsurance.ldapsync.csv;
+
+import static com.acmeinsurance.ldapsync.testsupport.TestDirectory.FEATURES;
+import static com.acmeinsurance.ldapsync.testsupport.TestDirectory.INTERNAL;
+import static com.acmeinsurance.ldapsync.testsupport.TestDirectory.MEMBERS;
+import static com.acmeinsurance.ldapsync.testsupport.TestDirectory.OTHER;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import com.acmeinsurance.ldapsync.SyncConfig;
+import com.acmeinsurance.ldapsync.ldap.LdapDirectory;
+import com.acmeinsurance.ldapsync.testsupport.TestDirectory;
+import com.unboundid.ldap.sdk.SearchResultEntry;
+
+import io.smallrye.config.PropertiesConfigSource;
+import io.smallrye.config.SmallRyeConfigBuilder;
+
+/** CSV intake per user type, against the in-memory directory. */
+class CsvIntakeServiceTest {
+
+    private TestDirectory ldap;
+    private LdapDirectory dir;
+    private CsvIntakeService csv;
+
+    @BeforeEach
+    void setUp() throws Exception {
+        ldap = new TestDirectory();
+        ldap.add("dn: cn=100234,ou=clients,ou=accounts,dc=acmeinsurance,dc=com", "objectClass: acmeClientAccount",
+                "cn: 100234");
+        dir = ldap.connect(false);
+        csv = new CsvIntakeService();
+        csv.cfg = new SmallRyeConfigBuilder()
+                .withMapping(SyncConfig.class)
+                .withSources(new PropertiesConfigSource(Map.of(
+                        "sync.ldap.url", "ldap://unused", "sync.ldap.bind-dn", "cn=unused",
+                        "sync.ldap.bind-password", "unused", "sync.accounts.soql", "x", "sync.agents.soql", "x"),
+                        "test", 500))
+                .build().getConfigMapping(SyncConfig.class);
+        csv.directory = () -> dir;
+    }
+
+    @AfterEach
+    void tearDown() {
+        dir.close();
+        ldap.close();
+    }
+
+    private Map<String, Object> load(String file, String... lines) throws Exception {
+        String text = String.join("\n", lines) + "\n";
+        return csv.load(new ByteArrayInputStream(text.getBytes(StandardCharsets.UTF_8)), file);
+    }
+
+    private static Set<String> values(SearchResultEntry e, String attr) {
+        Set<String> out = new TreeSet<>();
+        String[] v = e.getAttributeValues(attr);
+        if (v != null) {
+            for (String s : v) {
+                out.add(attr.endsWith("DN") ? LdapDirectory.normalize(s) : s);
+            }
+        }
+        return out;
+    }
+
+    @Test
+    void internalUsersGetFeatureGrantsAndOptionalAccountScope() throws Exception {
+        load("internal/staff.csv", "uid,sn,features,accounts",
+                "carol,Csr,claims|quoting/read-quotes,client:100234");
+
+        SearchResultEntry e = ldap.get("uid=carol," + INTERNAL);
+        assertEquals("csv", e.getAttributeValue("acmeSource"));
+        assertEquals("internal", e.getAttributeValue("acmeUserType"));
+        assertTrue(e.hasObjectClass("acmeFeatureAccess"));
+        assertEquals(Set.of(LdapDirectory.normalize("cn=claims," + FEATURES),
+                LdapDirectory.normalize("cn=read-quotes,cn=quoting," + FEATURES)), values(e, "acmeFeatureDN"));
+        assertEquals(1, values(e, "acmeAccountDN").size());
+    }
+
+    @Test
+    void aMalformedFeatureReferenceFailsTheRow() {
+        // A reference to a feature that does not exist is refused by the constraint
+        // overlay in production (smoke test); the in-memory server has no such overlay.
+        assertThrows(IllegalStateException.class,
+                () -> load("internal/staff.csv", "uid,sn,features", "dave,Bad,a/b/c"));
+        assertNull(get("uid=dave," + INTERNAL));
+    }
+
+    @Test
+    void membersHoldPolicyNumbersOnly() throws Exception {
+        load("members/m.csv", "uid,sn,policyNumbers", "m1,One,POL-1|POL-2");
+        assertEquals(Set.of("POL-1", "POL-2"), values(ldap.get("uid=m1," + MEMBERS), "acmePolicyNumber"));
+
+        assertThrows(IllegalStateException.class,
+                () -> load("members/m.csv", "uid,sn,accounts", "m2,Two,client:100234"));
+        assertThrows(IllegalStateException.class,
+                () -> load("members/m.csv", "uid,sn,features", "m3,Three,quoting"));
+        assertNull(get("uid=m2," + MEMBERS));
+        assertNull(get("uid=m3," + MEMBERS));
+    }
+
+    @Test
+    void internalUsersDoNotHoldPolicyNumbers() {
+        assertThrows(IllegalStateException.class,
+                () -> load("internal/staff.csv", "uid,sn,policyNumbers", "erin,Staff,POL-1"));
+    }
+
+    @Test
+    void otherUsersMayHoldAllThreeKindsOfGrant() throws Exception {
+        load("other/o.csv", "uid,sn,features,accounts,policyNumbers",
+                "casey,Contractor,claims/view-claims,client:100234,POL-9");
+
+        SearchResultEntry e = ldap.get("uid=casey," + OTHER);
+        assertNotNull(e);
+        assertEquals("csv", e.getAttributeValue("acmeSource"));
+        assertEquals(1, values(e, "acmeFeatureDN").size());
+        assertEquals(1, values(e, "acmeAccountDN").size());
+        assertEquals(Set.of("POL-9"), values(e, "acmePolicyNumber"));
+    }
+
+    @Test
+    void takesOverEntriesFromTheOldPerFeedSource() throws Exception {
+        ldap.add("dn: uid=m4," + MEMBERS, "objectClass: inetOrgPerson", "objectClass: acmeUser",
+                "objectClass: acmeMemberAccess", "objectClass: acmeSyncManaged", "uid: m4", "cn: Old", "sn: Four",
+                "acmeUserType: member", "acmeSource: csv-members");
+
+        load("members/m.csv", "uid,sn,cn", "m4,Four,New Name");
+
+        SearchResultEntry e = ldap.get("uid=m4," + MEMBERS);
+        assertEquals("csv", e.getAttributeValue("acmeSource"));
+        assertEquals("New Name", e.getAttributeValue("cn"));
+    }
+
+    private SearchResultEntry get(String dn) {
+        try {
+            return ldap.get(dn);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+}

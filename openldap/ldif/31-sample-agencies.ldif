@@ -1,0 +1,63 @@
+# Sample agency tree and agent from the directory design (13 Nov 2026), loaded
+# only when LOAD_SAMPLE_AGENCIES=true. For trying the directory and the auth
+# gateway before the Salesforce sync runs; do not enable on a server the sync
+# feeds. These entries have no acmeSource, so the sync treats them as hand-made:
+# it never changes or removes them, and reports an error if Salesforce sends a
+# record with the same cn under the same parent.
+#
+# ou=agencies
+# └── cn=AG0042                  agency
+#     ├── cn=AGR-0042-01         agreement
+#     │   ├── cn=BK-000311       book
+#     │   └── cn=BK-000312       book
+#     └── cn=AGR-0042-02         agreement
+#         └── cn=BK-000340       book
+#
+# The agent holds AGR-0042-01, so may see BK-000311 and BK-000312 but not
+# BK-000340, and the read-quotes permission of the quoting feature
+# (32-sample-features.ldif). No password is set; use ldappasswd as svc-sync to
+# give it one.
+dn: cn=AG0042,ou=agencies,ou=accounts,dc=acmeinsurance,dc=com
+objectClass: acmeAgencyAccount
+cn: AG0042
+displayName: Sample Agency
+
+dn: cn=AGR-0042-01,cn=AG0042,ou=agencies,ou=accounts,dc=acmeinsurance,dc=com
+objectClass: acmeAgreementAccount
+cn: AGR-0042-01
+displayName: Sample Agency agreement 01
+
+dn: cn=BK-000311,cn=AGR-0042-01,cn=AG0042,ou=agencies,ou=accounts,dc=acmeinsurance,dc=com
+objectClass: acmeBookAccount
+cn: BK-000311
+displayName: Book 000311
+
+dn: cn=BK-000312,cn=AGR-0042-01,cn=AG0042,ou=agencies,ou=accounts,dc=acmeinsurance,dc=com
+objectClass: acmeBookAccount
+cn: BK-000312
+displayName: Book 000312
+
+dn: cn=AGR-0042-02,cn=AG0042,ou=agencies,ou=accounts,dc=acmeinsurance,dc=com
+objectClass: acmeAgreementAccount
+cn: AGR-0042-02
+displayName: Sample Agency agreement 02
+
+dn: cn=BK-000340,cn=AGR-0042-02,cn=AG0042,ou=agencies,ou=accounts,dc=acmeinsurance,dc=com
+objectClass: acmeBookAccount
+cn: BK-000340
+displayName: Book 000340
+
+dn: uid=sample.agent,ou=agents,ou=people,dc=acmeinsurance,dc=com
+objectClass: inetOrgPerson
+objectClass: acmeUser
+objectClass: acmeAccountAccess
+objectClass: acmeFeatureAccess
+uid: sample.agent
+cn: Sample Agent
+givenName: Sample
+sn: Agent
+mail: sample.agent@agency.example
+acmeUserType: agent
+acmeAccountDN: cn=AGR-0042-01,cn=AG0042,ou=agencies,ou=accounts,dc=acmeinsurance,dc=com
+acmeFeatureDN: cn=read-quotes,cn=quoting,ou=features,dc=acmeinsurance,dc=com
+pwdPolicySubentry: cn=agents,ou=policies,dc=acmeinsurance,dc=com

@@ -1,0 +1,26 @@
+# Global settings and modules. entrypoint.sh concatenates, in order:
+#   00-config-global.ldif, core/cosine/inetorgperson schemas,
+#   01-acmeinsurance-schema.ldif, 02-acmeinsurance-sync-schema.ldif, 10-config-db.ldif
+# and loads the result with slapadd -n0 on first start.
+dn: cn=config
+objectClass: olcGlobal
+cn: config
+olcArgsFile: /run/slapd/slapd.args
+olcPidFile: /run/slapd/slapd.pid
+olcLogLevel: stats
+
+dn: cn=module{0},cn=config
+objectClass: olcModuleList
+cn: module{0}
+olcModulePath: /usr/lib/ldap
+olcModuleLoad: back_mdb
+olcModuleLoad: argon2
+olcModuleLoad: ppolicy
+olcModuleLoad: unique
+olcModuleLoad: refint
+olcModuleLoad: constraint
+
+dn: cn=schema,cn=config
+objectClass: olcSchemaConfig
+cn: schema
+

@@ -1,0 +1,53 @@
+# Features, permissions and OAuth clients, used by the auth (token) service.
+# A separate schema entry, so it can be added to an existing server:
+#   ldapadd -Y EXTERNAL -H ldapi:/// -f 03-acmeinsurance-auth-schema.ldif
+#
+# Features follow the same pattern as accounts: entries in a tree, granted by DN.
+#
+#   ou=features
+#   └── cn=quoting               acmeFeature
+#       ├── cn=read-quotes       acmePermission
+#       └── cn=write-quotes      acmePermission
+#
+# A user's acmeFeatureDN values may name a feature (every permission under it,
+# including ones added later) or a single permission. The constraint overlay
+# refuses a DN that is not a feature or permission, and refint removes or
+# rewrites grants when one is deleted or renamed.
+#
+# OAuth clients live under ou=oauth-clients,ou=services. A confidential client
+# has a userPassword (its client secret, hashed by slapd) and authenticates by
+# binding; a public client (browser or mobile app, PKCE) has none.
+dn: cn=acmeinsurance-auth,cn=schema,cn=config
+objectClass: olcSchemaConfig
+cn: acmeinsurance-auth
+olcAttributeTypes: ( 1.3.6.1.4.1.99999.1.1.11 NAME 'acmeFeatureDN'
+  DESC 'DN of a feature or permission the user is granted (multi-valued)'
+  EQUALITY distinguishedNameMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 )
+olcAttributeTypes: ( 1.3.6.1.4.1.99999.1.1.12 NAME 'acmeRedirectUri'
+  DESC 'Registered OAuth redirect URI, matched exactly (multi-valued)'
+  EQUALITY caseExactIA5Match
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.26{512} )
+olcAttributeTypes: ( 1.3.6.1.4.1.99999.1.1.13 NAME 'acmeGrantType'
+  DESC 'OAuth grant type the client may use: authorization_code, password, refresh_token'
+  EQUALITY caseIgnoreMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{32} )
+olcObjectClasses: ( 1.3.6.1.4.1.99999.1.2.10 NAME 'acmeFeature'
+  DESC 'An application feature; parent of its permissions'
+  SUP top STRUCTURAL
+  MUST cn
+  MAY ( displayName $ description ) )
+olcObjectClasses: ( 1.3.6.1.4.1.99999.1.2.11 NAME 'acmePermission'
+  DESC 'One permission within a feature, e.g. read-quotes'
+  SUP top STRUCTURAL
+  MUST cn
+  MAY ( displayName $ description ) )
+olcObjectClasses: ( 1.3.6.1.4.1.99999.1.2.12 NAME 'acmeFeatureAccess'
+  DESC 'Feature-level authorization (agents)'
+  SUP top AUXILIARY
+  MAY acmeFeatureDN )
+olcObjectClasses: ( 1.3.6.1.4.1.99999.1.2.13 NAME 'acmeOAuthClient'
+  DESC 'An application registered with the auth service; cn is the client_id'
+  SUP top STRUCTURAL
+  MUST cn
+  MAY ( userPassword $ acmeRedirectUri $ acmeGrantType $ displayName $ description ) )

@@ -1,0 +1,8 @@
+# Sample public OAuth client (no secret: authorization code + PKCE only, and no
+# refresh tokens), loaded when LOAD_SAMPLES=true. Redirect URIs are matched exactly.
+dn: cn=demo-spa,ou=oauth-clients,ou=services,dc=acmeinsurance,dc=com
+objectClass: acmeOAuthClient
+cn: demo-spa
+displayName: Demo single-page app
+acmeRedirectUri: http://127.0.0.1:8085/callback
+acmeGrantType: authorization_code

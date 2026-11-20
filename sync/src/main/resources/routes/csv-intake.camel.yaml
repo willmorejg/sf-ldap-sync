@@ -1,0 +1,19 @@
+# People who are not in Salesforce: drop CSV files into
+#   inbox/internal/  home office staff
+#   inbox/members/   insureds
+#   inbox/other/     anyone else
+# Processed files move to .done/; files with any failed row move to .failed/
+# (good rows are still applied, and re-dropping a fixed file is safe).
+- route:
+    id: csv-intake
+    from:
+      uri: "file:{{sync.csv.inbox}}"
+      parameters:
+        recursive: true
+        include: ".*\\.csv"
+        readLock: changed
+        move: ".done/${date:now:yyyyMMdd-HHmmss}-${file:onlyname}"
+        moveFailed: ".failed/${date:now:yyyyMMdd-HHmmss}-${file:onlyname}"
+      steps:
+        - to: "bean:csvIntake?method=load(${body}, ${header.CamelFileName})"
+        - log: "CSV intake ${header.CamelFileName}: ${body}"

@@ -1,0 +1,13 @@
+# Sample confidential OAuth client, loaded when LOAD_SAMPLES=true and
+# OAUTH_DEMO_CLIENT_SECRET is set (at least 32 characters). It may use the
+# password grant, which is for trusted first-party applications only.
+dn: cn=demo-app,ou=oauth-clients,ou=services,dc=acmeinsurance,dc=com
+objectClass: acmeOAuthClient
+cn: demo-app
+displayName: Demo server-side app
+acmeRedirectUri: http://127.0.0.1:8085/callback
+acmeGrantType: authorization_code
+acmeGrantType: password
+acmeGrantType: refresh_token
+userPassword: __DEMO_CLIENT_PW_HASH__
+pwdPolicySubentry: cn=oauth-clients,ou=policies,dc=acmeinsurance,dc=com
