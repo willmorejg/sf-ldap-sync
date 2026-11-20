@@ -19,16 +19,17 @@ public record PersonSpec(String uid, String sfId, boolean active, Map<String, Li
                          Set<String> accountDns, Set<String> policyNumbers, Set<String> featureDns) {
 
     /** A spec that leaves feature grants alone (the Salesforce sync never manages them). */
-    public PersonSpec(String uid, String sfId, boolean active, Map<String, List<String>> attributes,
-                      Set<String> accountDns, Set<String> policyNumbers) {
+    public PersonSpec(final String uid, final String sfId, final boolean active,
+                      final Map<String, List<String>> attributes,
+                      final Set<String> accountDns, final Set<String> policyNumbers) {
         this(uid, sfId, active, attributes, accountDns, policyNumbers, null);
     }
 
-    public PersonSpec withAccountDns(Set<String> dns) {
+    public PersonSpec withAccountDns(final Set<String> dns) {
         return new PersonSpec(uid, sfId, active, attributes, dns, policyNumbers, featureDns);
     }
 
-    public PersonSpec withFeatureDns(Set<String> dns) {
+    public PersonSpec withFeatureDns(final Set<String> dns) {
         return new PersonSpec(uid, sfId, active, attributes, accountDns, policyNumbers, dns);
     }
 }

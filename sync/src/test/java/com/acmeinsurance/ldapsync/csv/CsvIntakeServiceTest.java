@@ -29,7 +29,7 @@ import io.smallrye.config.PropertiesConfigSource;
 import io.smallrye.config.SmallRyeConfigBuilder;
 
 /** CSV intake per user type, against the in-memory directory. */
-class CsvIntakeServiceTest {
+final class CsvIntakeServiceTest {
 
     private TestDirectory ldap;
     private LdapDirectory dir;
@@ -41,15 +41,14 @@ class CsvIntakeServiceTest {
         ldap.add("dn: cn=100234,ou=clients,ou=accounts,dc=acmeinsurance,dc=com", "objectClass: acmeClientAccount",
                 "cn: 100234");
         dir = ldap.connect(false);
-        csv = new CsvIntakeService();
-        csv.cfg = new SmallRyeConfigBuilder()
+        final SyncConfig cfg = new SmallRyeConfigBuilder()
                 .withMapping(SyncConfig.class)
                 .withSources(new PropertiesConfigSource(Map.of(
                         "sync.ldap.url", "ldap://unused", "sync.ldap.bind-dn", "cn=unused",
                         "sync.ldap.bind-password", "unused", "sync.accounts.soql", "x", "sync.agents.soql", "x"),
                         "test", 500))
                 .build().getConfigMapping(SyncConfig.class);
-        csv.directory = () -> dir;
+        csv = new CsvIntakeService(cfg, () -> dir);
     }
 
     @AfterEach
@@ -58,16 +57,16 @@ class CsvIntakeServiceTest {
         ldap.close();
     }
 
-    private Map<String, Object> load(String file, String... lines) throws Exception {
-        String text = String.join("\n", lines) + "\n";
+    private Map<String, Object> load(final String file, final String... lines) throws Exception {
+        final String text = String.join("\n", lines) + "\n";
         return csv.load(new ByteArrayInputStream(text.getBytes(StandardCharsets.UTF_8)), file);
     }
 
-    private static Set<String> values(SearchResultEntry e, String attr) {
-        Set<String> out = new TreeSet<>();
-        String[] v = e.getAttributeValues(attr);
+    private static Set<String> values(final SearchResultEntry e, final String attr) {
+        final Set<String> out = new TreeSet<>();
+        final String[] v = e.getAttributeValues(attr);
         if (v != null) {
-            for (String s : v) {
+            for (final String s : v) {
                 out.add(attr.endsWith("DN") ? LdapDirectory.normalize(s) : s);
             }
         }
@@ -79,7 +78,7 @@ class CsvIntakeServiceTest {
         load("internal/staff.csv", "uid,sn,features,accounts",
                 "carol,Csr,claims|quoting/read-quotes,client:100234");
 
-        SearchResultEntry e = ldap.get("uid=carol," + INTERNAL);
+        final SearchResultEntry e = ldap.get("uid=carol," + INTERNAL);
         assertEquals("csv", e.getAttributeValue("acmeSource"));
         assertEquals("internal", e.getAttributeValue("acmeUserType"));
         assertTrue(e.hasObjectClass("acmeFeatureAccess"));
@@ -121,7 +120,7 @@ class CsvIntakeServiceTest {
         load("other/o.csv", "uid,sn,features,accounts,policyNumbers",
                 "casey,Contractor,claims/view-claims,client:100234,POL-9");
 
-        SearchResultEntry e = ldap.get("uid=casey," + OTHER);
+        final SearchResultEntry e = ldap.get("uid=casey," + OTHER);
         assertNotNull(e);
         assertEquals("csv", e.getAttributeValue("acmeSource"));
         assertEquals(1, values(e, "acmeFeatureDN").size());
@@ -137,15 +136,15 @@ class CsvIntakeServiceTest {
 
         load("members/m.csv", "uid,sn,cn", "m4,Four,New Name");
 
-        SearchResultEntry e = ldap.get("uid=m4," + MEMBERS);
+        final SearchResultEntry e = ldap.get("uid=m4," + MEMBERS);
         assertEquals("csv", e.getAttributeValue("acmeSource"));
         assertEquals("New Name", e.getAttributeValue("cn"));
     }
 
-    private SearchResultEntry get(String dn) {
+    private SearchResultEntry get(final String dn) {
         try {
             return ldap.get(dn);
-        } catch (Exception e) {
+        } catch (final Exception e) {
             throw new IllegalStateException(e);
         }
     }

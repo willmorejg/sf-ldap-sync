@@ -30,7 +30,7 @@ import com.acmeinsurance.ldapsync.testsupport.TestDirectory;
 import com.unboundid.ldap.sdk.Entry;
 import com.unboundid.ldap.sdk.SearchResultEntry;
 
-class PersonWriterTest {
+final class PersonWriterTest {
 
     private static final String SF_ID = "005000000000001AAA";
     private static final String AGENCY_A = "cn=AG0001," + AGENCIES;
@@ -45,7 +45,7 @@ class PersonWriterTest {
     @BeforeEach
     void setUp() throws Exception {
         ldap = new TestDirectory();
-        for (String dn : List.of(AGENCY_A, AGENCY_B)) {
+        for (final String dn : List.of(AGENCY_A, AGENCY_B)) {
             ldap.add("dn: " + dn, "objectClass: acmeAgencyAccount", "cn: " + dn.substring(3, dn.indexOf(',')));
         }
         ldap.add("dn: " + CLIENT_C, "objectClass: acmeClientAccount", "cn: CL0001");
@@ -60,14 +60,14 @@ class PersonWriterTest {
         ldap.close();
     }
 
-    private static PersonWriter.Profile agents(boolean adoptUnowned) {
+    private static PersonWriter.Profile agents(final boolean adoptUnowned) {
         return new PersonWriter.Profile("salesforce", "agent", AGENTS,
                 List.of("inetOrgPerson", "acmeUser", "acmeAccountAccess"), AGENT_POLICY,
                 dn -> LdapDirectory.isUnder(dn, AGENCIES), true, adoptUnowned);
     }
 
-    private static PersonSpec agent(String uid, boolean active, Set<String> grants) {
-        Map<String, List<String>> attrs = new LinkedHashMap<>();
+    private static PersonSpec agent(final String uid, final boolean active, final Set<String> grants) {
+        final Map<String, List<String>> attrs = new LinkedHashMap<>();
         attrs.put("givenName", List.of("Ada"));
         attrs.put("sn", List.of("Lovelace"));
         attrs.put("cn", List.of("Ada Lovelace")); // AgentMapper always fills cn
@@ -75,20 +75,20 @@ class PersonWriterTest {
         return new PersonSpec(uid, SF_ID, active, attrs, grants, null);
     }
 
-    private static Set<String> grants(SearchResultEntry e) {
-        Set<String> out = new TreeSet<>();
-        String[] v = e.getAttributeValues("acmeAccountDN");
+    private static Set<String> grants(final SearchResultEntry e) {
+        final Set<String> out = new TreeSet<>();
+        final String[] v = e.getAttributeValues("acmeAccountDN");
         if (v != null) {
-            for (String dn : v) {
+            for (final String dn : v) {
                 out.add(LdapDirectory.normalize(dn));
             }
         }
         return out;
     }
 
-    private static Set<String> normalized(String... dns) {
-        Set<String> out = new TreeSet<>();
-        for (String dn : dns) {
+    private static Set<String> normalized(final String... dns) {
+        final Set<String> out = new TreeSet<>();
+        for (final String dn : dns) {
             out.add(LdapDirectory.normalize(dn));
         }
         return out;
@@ -98,7 +98,7 @@ class PersonWriterTest {
     void createsAnOwnedAgentWithoutAPassword() throws Exception {
         writer.upsert(agent("ada", true, Set.of(AGENCY_A)), agents(false), report);
 
-        SearchResultEntry e = ldap.get("uid=ada," + AGENTS);
+        final SearchResultEntry e = ldap.get("uid=ada," + AGENTS);
         assertNotNull(e);
         assertTrue(e.hasObjectClass("inetOrgPerson"));
         assertTrue(e.hasObjectClass("acmeSyncManaged"));
@@ -128,7 +128,7 @@ class PersonWriterTest {
         writer.upsert(agent("ada.l", true, Set.of()), agents(false), report);
 
         assertNull(ldap.get("uid=ada," + AGENTS));
-        SearchResultEntry e = ldap.get("uid=ada.l," + AGENTS);
+        final SearchResultEntry e = ldap.get("uid=ada.l," + AGENTS);
         assertNotNull(e);
         assertEquals("ada.l", e.getAttributeValue("uid"));
         assertEquals(1, report.count("agent.renamed"));
@@ -151,13 +151,13 @@ class PersonWriterTest {
         writer.upsert(agent("ada", true, Set.of()), agents(false), report);
         writer.upsert(agent("ada", false, Set.of()), agents(false), report);
 
-        SearchResultEntry locked = ldap.get("uid=ada," + AGENTS);
+        final SearchResultEntry locked = ldap.get("uid=ada," + AGENTS);
         assertEquals(PersonWriter.PERMANENT_LOCK, locked.getAttributeValue("pwdAccountLockedTime"));
         assertTrue(locked.hasAttribute("acmeDeactivated"));
         assertEquals(1, report.count("agent.deactivated"));
 
         writer.upsert(agent("ada", true, Set.of()), agents(false), report);
-        SearchResultEntry unlocked = ldap.get("uid=ada," + AGENTS);
+        final SearchResultEntry unlocked = ldap.get("uid=ada," + AGENTS);
         assertFalse(unlocked.hasAttribute("pwdAccountLockedTime"));
         assertFalse(unlocked.hasAttribute("acmeDeactivated"));
         assertEquals(1, report.count("agent.reactivated"));
@@ -173,7 +173,7 @@ class PersonWriterTest {
 
         writer.upsert(agent("ada", true, Set.of()), agents(false), report);
 
-        SearchResultEntry e = ldap.get("uid=ada," + AGENTS);
+        final SearchResultEntry e = ldap.get("uid=ada," + AGENTS);
         assertFalse(e.hasAttribute("acmeDeactivated"));
         assertEquals("20261119120000Z", e.getAttributeValue("pwdAccountLockedTime"));
     }
@@ -193,9 +193,9 @@ class PersonWriterTest {
         assertTrue(report.hasErrors());
         assertEquals("Hand Made", ldap.get("uid=ada," + AGENTS).getAttributeValue("cn"));
 
-        SyncReport second = new SyncReport("test");
+        final SyncReport second = new SyncReport("test");
         writer.upsert(agent("ada", true, Set.of()), agents(true), second);
-        SearchResultEntry e = ldap.get("uid=ada," + AGENTS);
+        final SearchResultEntry e = ldap.get("uid=ada," + AGENTS);
         assertFalse(second.hasErrors(), second.toString());
         assertEquals(1, second.count("agent.adopted"));
         assertEquals("salesforce", e.getAttributeValue("acmeSource"));
@@ -224,24 +224,24 @@ class PersonWriterTest {
         assertNull(ldap.get("uid=ada," + AGENTS));
     }
 
-    private static PersonWriter.Profile csvInternal(boolean adoptUnowned) {
+    private static PersonWriter.Profile csvInternal(final boolean adoptUnowned) {
         return new PersonWriter.Profile("csv", "internal", INTERNAL,
                 List.of("inetOrgPerson", "acmeUser", "acmeFeatureAccess", "acmeAccountAccess"), null,
                 dn -> true, true, adoptUnowned);
     }
 
-    private static PersonSpec staff(String uid, Set<String> features) {
-        Map<String, List<String>> attrs = new LinkedHashMap<>();
+    private static PersonSpec staff(final String uid, final Set<String> features) {
+        final Map<String, List<String>> attrs = new LinkedHashMap<>();
         attrs.put("sn", List.of("Staff"));
         attrs.put("cn", List.of("Some Staff"));
         return new PersonSpec(uid, null, true, attrs, null, null, features);
     }
 
-    private static Set<String> features(SearchResultEntry e) {
-        Set<String> out = new TreeSet<>();
-        String[] v = e.getAttributeValues("acmeFeatureDN");
+    private static Set<String> features(final SearchResultEntry e) {
+        final Set<String> out = new TreeSet<>();
+        final String[] v = e.getAttributeValues("acmeFeatureDN");
         if (v != null) {
-            for (String dn : v) {
+            for (final String dn : v) {
                 out.add(LdapDirectory.normalize(dn));
             }
         }
@@ -250,10 +250,10 @@ class PersonWriterTest {
 
     @Test
     void writesAndPrunesFeatureGrantsWhenTheSourceSendsThem() throws Exception {
-        String quoting = "cn=quoting," + FEATURES;
-        String approve = "cn=approve-claims,cn=claims," + FEATURES;
+        final String quoting = "cn=quoting," + FEATURES;
+        final String approve = "cn=approve-claims,cn=claims," + FEATURES;
         writer.upsert(staff("carol", Set.of(quoting, approve)), csvInternal(false), report);
-        SearchResultEntry e = ldap.get("uid=carol," + INTERNAL);
+        final SearchResultEntry e = ldap.get("uid=carol," + INTERNAL);
         assertTrue(e.hasObjectClass("acmeFeatureAccess"));
         assertEquals(normalized(quoting, approve), features(e));
 
@@ -275,7 +275,7 @@ class PersonWriterTest {
         writer.upsert(staff("dan", null), csvInternal(false), report);
 
         assertFalse(report.hasErrors(), report.toString());
-        SearchResultEntry e = ldap.get("uid=dan," + INTERNAL);
+        final SearchResultEntry e = ldap.get("uid=dan," + INTERNAL);
         assertEquals("csv", e.getAttributeValue("acmeSource"));
         assertEquals("Some Staff", e.getAttributeValue("cn"));
     }
@@ -289,7 +289,7 @@ class PersonWriterTest {
         assertTrue(report.hasErrors());
         assertEquals("Erin By Hand", ldap.get("uid=erin," + INTERNAL).getAttributeValue("cn"));
 
-        SyncReport second = new SyncReport("test");
+        final SyncReport second = new SyncReport("test");
         writer.upsert(staff("erin", null), csvInternal(true), second);
         assertFalse(second.hasErrors(), second.toString());
         assertEquals(1, second.count("internal.adopted"));
@@ -308,7 +308,7 @@ class PersonWriterTest {
     @Test
     void deactivateIsANoOpWhenAlreadyDeactivated() throws Exception {
         writer.upsert(agent("ada", true, Set.of()), agents(false), report);
-        Entry e = ldap.get("uid=ada," + AGENTS);
+        final Entry e = ldap.get("uid=ada," + AGENTS);
         writer.deactivate(ldap.get(e.getDN()), agents(false), report);
         writer.deactivate(ldap.get(e.getDN()), agents(false), report);
         assertEquals(1, report.count("agent.deactivated"));

@@ -16,23 +16,23 @@ public final class SalesforceIds {
     private SalesforceIds() {
     }
 
-    public static boolean isValid(String id) {
+    public static boolean isValid(final String id) {
         return id != null && ID.matcher(id).matches();
     }
 
     /** Returns the 18-character form of a 15- or 18-character ID. */
-    public static String to18(String id) {
+    public static String to18(final String id) {
         if (!isValid(id)) {
             throw new IllegalArgumentException("Not a Salesforce ID: " + id);
         }
         if (id.length() == 18) {
             return id;
         }
-        StringBuilder suffix = new StringBuilder(3);
+        final StringBuilder suffix = new StringBuilder(3);
         for (int chunk = 0; chunk < 3; chunk++) {
             int bits = 0;
             for (int i = 0; i < 5; i++) {
-                char c = id.charAt(chunk * 5 + i);
+                final char c = id.charAt(chunk * 5 + i);
                 if (c >= 'A' && c <= 'Z') {
                     bits |= 1 << i;
                 }
@@ -43,7 +43,7 @@ public final class SalesforceIds {
     }
 
     /** Like {@link #to18} but returns null for null or blank input. */
-    public static String normalize(String id) {
+    public static String normalize(final String id) {
         return id == null || id.isBlank() ? null : to18(id.trim());
     }
 }

@@ -20,28 +20,28 @@ public final class SyncReport {
     private final List<String> errors = new ArrayList<>();
     private int droppedMessages;
 
-    public SyncReport(String name) {
+    public SyncReport(final String name) {
         this.name = name;
     }
 
-    public synchronized void inc(String key) {
+    public synchronized void inc(final String key) {
         counts.merge(key, 1, Integer::sum);
     }
 
-    public synchronized void set(String key, int value) {
+    public synchronized void set(final String key, final int value) {
         counts.put(key, value);
     }
 
-    public synchronized void warn(String message) {
+    public synchronized void warn(final String message) {
         add(warnings, message);
     }
 
-    public synchronized void error(String message) {
+    public synchronized void error(final String message) {
         counts.merge("errors", 1, Integer::sum);
         add(errors, message);
     }
 
-    private void add(List<String> list, String message) {
+    private void add(final List<String> list, final String message) {
         if (list.size() < MAX_MESSAGES) {
             list.add(message);
         } else {
@@ -53,7 +53,7 @@ public final class SyncReport {
         return !errors.isEmpty();
     }
 
-    public synchronized int count(String key) {
+    public synchronized int count(final String key) {
         return counts.getOrDefault(key, 0);
     }
 
@@ -63,7 +63,7 @@ public final class SyncReport {
     }
 
     public synchronized Map<String, Object> toMap() {
-        Map<String, Object> m = new LinkedHashMap<>();
+        final Map<String, Object> m = new LinkedHashMap<>();
         m.put("sync", name);
         m.put("started", started.toString());
         if (finished != null) {

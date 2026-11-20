@@ -25,12 +25,12 @@ public class SalesforceComponentProducer {
     @Produces
     @Singleton
     @Named("salesforce")
-    SalesforceComponent salesforce(SyncConfig cfg) {
-        SyncConfig.Salesforce sf = cfg.salesforce();
-        String clientId = sf.clientId().filter(s -> !s.isBlank()).orElseThrow(() -> new IllegalStateException(
+    SalesforceComponent salesforce(final SyncConfig cfg) {
+        final SyncConfig.Salesforce sf = cfg.salesforce();
+        final String clientId = sf.clientId().filter(s -> !s.isBlank()).orElseThrow(() -> new IllegalStateException(
                 "Salesforce is enabled but SF_CLIENT_ID (sync.salesforce.client-id) is not set; "
                         + "set it, or set SF_ENABLED=false to run without Salesforce"));
-        SalesforceComponent c = new SalesforceComponent();
+        final SalesforceComponent c = new SalesforceComponent();
         c.setAuthenticationType(AuthenticationType.valueOf(sf.authenticationType()));
         c.setLoginUrl(sf.loginUrl());
         c.setClientId(clientId);

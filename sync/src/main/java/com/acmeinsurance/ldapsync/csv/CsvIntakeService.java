@@ -31,7 +31,6 @@ import com.unboundid.ldap.sdk.SearchResultEntry;
 import com.unboundid.ldap.sdk.SearchScope;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Provider;
 
@@ -58,36 +57,38 @@ public class CsvIntakeService {
     /** acmeSource of every entry the CSV feeds write. */
     public static final String SOURCE = "csv";
 
-    @Inject
-    SyncConfig cfg;
+    private final SyncConfig cfg;
+    private final Provider<LdapDirectory> directory;
 
-    @Inject
-    Provider<LdapDirectory> directory;
+    public CsvIntakeService(final SyncConfig cfg, final Provider<LdapDirectory> directory) {
+        this.cfg = cfg;
+        this.directory = directory;
+    }
 
     /**
      * @param fileName path relative to the inbox, e.g. {@code members/2026-11-18.csv};
      *                 the folder decides the user type
      * @throws IllegalStateException if any row failed, so Camel moves the file to .failed
      */
-    public Map<String, Object> load(InputStream in, String fileName) throws Exception {
-        String type = fileName.replace('\\', '/').split("/")[0];
-        PersonWriter.Profile profile = profileFor(type);
-        LdapDirectory dir = directory.get();
-        PersonWriter writer = new PersonWriter(dir, cfg.ldap().peopleDn());
-        SyncReport r = new SyncReport("csv " + fileName);
+    public Map<String, Object> load(final InputStream in, final String fileName) throws Exception {
+        final String type = fileName.replace('\\', '/').split("/")[0];
+        final PersonWriter.Profile profile = profileFor(type);
+        final LdapDirectory dir = directory.get();
+        final PersonWriter writer = new PersonWriter(dir, cfg.ldap().peopleDn());
+        final SyncReport r = new SyncReport("csv " + fileName);
         Map<String, String> accountDnBySfId = null;
 
-        CSVFormat format = CSVFormat.DEFAULT.builder()
+        final CSVFormat format = CSVFormat.DEFAULT.builder()
                 .setHeader().setSkipHeaderRecord(true).setTrim(true).setIgnoreEmptyLines(true).get();
         try (Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8);
              CSVParser parser = format.parse(reader)) {
-            Map<String, String> header = CsvRowMapper.canonicalHeader(parser.getHeaderNames());
-            for (CSVRecord rec : parser) {
-                String line = "line " + (rec.getRecordNumber() + 1);
+            final Map<String, String> header = CsvRowMapper.canonicalHeader(parser.getHeaderNames());
+            for (final CSVRecord rec : parser) {
+                final String line = "line " + (rec.getRecordNumber() + 1);
                 try {
-                    Map<String, String> row = new LinkedHashMap<>();
+                    final Map<String, String> row = new LinkedHashMap<>();
                     header.forEach((col, canonical) -> row.put(canonical, rec.isSet(col) ? rec.get(col) : ""));
-                    CsvRowMapper.Row mapped = CsvRowMapper.map(row);
+                    final CsvRowMapper.Row mapped = CsvRowMapper.map(row);
                     checkAllowed(type, mapped);
                     PersonSpec spec = mapped.spec();
                     if (mapped.featureRefs() != null) {
@@ -100,9 +101,9 @@ public class CsvIntakeService {
                         spec = spec.withAccountDns(resolve(mapped.accountRefs(), accountDnBySfId));
                     }
                     writer.upsert(spec, profile, r);
-                } catch (LDAPException e) {
+                } catch (final LDAPException e) {
                     r.error(line + ": " + e.getExceptionMessage());
-                } catch (IllegalArgumentException e) {
+                } catch (final IllegalArgumentException e) {
                     r.error(line + ": " + e.getMessage());
                 }
             }
@@ -116,9 +117,9 @@ public class CsvIntakeService {
         return r.toMap();
     }
 
-    private PersonWriter.Profile profileFor(String type) {
-        String people = cfg.ldap().peopleDn();
-        boolean adopt = cfg.safety().adoptUnowned();
+    private PersonWriter.Profile profileFor(final String type) {
+        final String people = cfg.ldap().peopleDn();
+        final boolean adopt = cfg.safety().adoptUnowned();
         return switch (type) {
             case "internal" -> new PersonWriter.Profile(SOURCE, "internal", "ou=internal," + people,
                     List.of("inetOrgPerson", "acmeUser", "acmeFeatureAccess", "acmeAccountAccess"),
@@ -134,7 +135,7 @@ public class CsvIntakeService {
     }
 
     /** Members hold policy numbers only; internal users have no policy grants. */
-    private static void checkAllowed(String type, CsvRowMapper.Row row) {
+    private static void checkAllowed(final String type, final CsvRowMapper.Row row) {
         if ("members".equals(type) && (row.accountRefs() != null && !row.accountRefs().isEmpty()
                 || row.featureRefs() != null && !row.featureRefs().isEmpty())) {
             throw new IllegalArgumentException("members hold policy numbers only, not account or feature grants");
@@ -149,14 +150,14 @@ public class CsvIntakeService {
      * {@code quoting/read-quotes} (one permission) or a full DN under ou=features.
      * The directory's constraint overlay refuses a DN that is not a feature or permission.
      */
-    private Set<String> resolveFeatures(Set<String> refs) {
-        Set<String> dns = new LinkedHashSet<>();
-        for (String ref : refs) {
+    private Set<String> resolveFeatures(final Set<String> refs) {
+        final Set<String> dns = new LinkedHashSet<>();
+        for (final String ref : refs) {
             if (ref.contains("=")) {
                 dns.add(ref);
                 continue;
             }
-            String[] parts = ref.split("/");
+            final String[] parts = ref.split("/");
             if (parts.length > 2 || Arrays.stream(parts).anyMatch(String::isBlank)) {
                 throw new IllegalArgumentException("feature reference '" + ref
                         + "' must be feature, feature/permission or a DN");
@@ -174,12 +175,12 @@ public class CsvIntakeService {
      * Grant references: {@code sf:<Salesforce ID>} for an agency/agreement/book,
      * {@code client:<client ID>} for an entry under ou=clients, or a full DN.
      */
-    private Set<String> resolve(Set<String> refs, Map<String, String> bySfId) {
-        Set<String> dns = new LinkedHashSet<>();
-        for (String ref : refs) {
+    private Set<String> resolve(final Set<String> refs, final Map<String, String> bySfId) {
+        final Set<String> dns = new LinkedHashSet<>();
+        for (final String ref : refs) {
             if (ref.startsWith("sf:")) {
-                String id = ref.substring(3).trim();
-                String dn = SalesforceIds.isValid(id) ? bySfId.get(SalesforceIds.to18(id)) : null;
+                final String id = ref.substring(3).trim();
+                final String dn = SalesforceIds.isValid(id) ? bySfId.get(SalesforceIds.to18(id)) : null;
                 if (dn == null) {
                     throw new IllegalArgumentException("account " + ref + " is not in the directory");
                 }
@@ -195,9 +196,9 @@ public class CsvIntakeService {
         return dns;
     }
 
-    private Map<String, String> loadAccountIndex(LdapDirectory dir) throws LDAPException {
-        Map<String, String> m = new HashMap<>();
-        for (SearchResultEntry e : dir.searchAll(cfg.ldap().accountsDn(), SearchScope.SUB,
+    private Map<String, String> loadAccountIndex(final LdapDirectory dir) throws LDAPException {
+        final Map<String, String> m = new HashMap<>();
+        for (final SearchResultEntry e : dir.searchAll(cfg.ldap().accountsDn(), SearchScope.SUB,
                 Filter.createPresenceFilter("acmeSalesforceId"), "acmeSalesforceId")) {
             m.put(e.getAttributeValue("acmeSalesforceId"), e.getDN());
         }

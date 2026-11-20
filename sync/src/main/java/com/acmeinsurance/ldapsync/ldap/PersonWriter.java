@@ -33,7 +33,7 @@ import com.unboundid.ldap.sdk.SearchScope;
  * Entries made by hand have no acmeSource and are left alone unless
  * {@code adoptUnowned} is set. Passwords are never written.
  */
-public class PersonWriter {
+public final class PersonWriter {
 
     /** Attributes read from existing entries; pwdAccountLockedTime is operational. */
     public static final String[] READ_ATTRS = {"*", "pwdAccountLockedTime"};
@@ -67,13 +67,13 @@ public class PersonWriter {
     private final LdapDirectory dir;
     private final String peopleDn;
 
-    public PersonWriter(LdapDirectory dir, String peopleDn) {
+    public PersonWriter(final LdapDirectory dir, final String peopleDn) {
         this.dir = dir;
         this.peopleDn = peopleDn;
     }
 
-    public void upsert(PersonSpec spec, Profile p, SyncReport r) throws LDAPException {
-        Located found = locate(spec, p, r);
+    public void upsert(final PersonSpec spec, final Profile p, final SyncReport r) throws LDAPException {
+        final Located found = locate(spec, p, r);
         if (!found.ok()) {
             return;
         }
@@ -85,7 +85,7 @@ public class PersonWriter {
     }
 
     /** Locks an entry the source no longer lists (no-op if already deactivated). */
-    public void deactivate(SearchResultEntry e, Profile p, SyncReport r) throws LDAPException {
+    public void deactivate(final SearchResultEntry e, final Profile p, final SyncReport r) throws LDAPException {
         if (e.hasAttribute("acmeDeactivated")) {
             return;
         }
@@ -93,15 +93,15 @@ public class PersonWriter {
         r.inc(key(p, "deactivated"));
     }
 
-    private Located locate(PersonSpec spec, Profile p, SyncReport r) throws LDAPException {
+    private Located locate(final PersonSpec spec, final Profile p, final SyncReport r) throws LDAPException {
         if (spec.sfId() != null) {
-            SearchResultEntry bySf = dir.findOne(p.ouDn(), SearchScope.ONE,
+            final SearchResultEntry bySf = dir.findOne(p.ouDn(), SearchScope.ONE,
                     Filter.createEqualityFilter("acmeSalesforceId", spec.sfId()), READ_ATTRS);
             if (bySf != null) {
                 return checkOwner(bySf, spec, p, r);
             }
         }
-        SearchResultEntry byUid = dir.findOne(peopleDn, SearchScope.SUB,
+        final SearchResultEntry byUid = dir.findOne(peopleDn, SearchScope.SUB,
                 Filter.createEqualityFilter("uid", spec.uid()), READ_ATTRS);
         if (byUid == null) {
             return new Located(null, true);
@@ -110,7 +110,7 @@ public class PersonWriter {
             r.error(spec.uid() + ": uid is already used by " + byUid.getDN());
             return new Located(null, false);
         }
-        String otherSf = byUid.getAttributeValue("acmeSalesforceId");
+        final String otherSf = byUid.getAttributeValue("acmeSalesforceId");
         if (spec.sfId() != null && otherSf != null && !otherSf.equals(spec.sfId())) {
             r.error(spec.uid() + ": uid already belongs to Salesforce user " + otherSf + ", not " + spec.sfId());
             return new Located(null, false);
@@ -126,7 +126,7 @@ public class PersonWriter {
      * to write csv-internal, csv-members and csv-other; "csv" owns those too and
      * rewrites them on the next update.
      */
-    static boolean owns(String source, String owner) {
+    static boolean owns(final String source, final String owner) {
         if (owner == null) {
             return false;
         }
@@ -134,7 +134,7 @@ public class PersonWriter {
                 || "csv".equalsIgnoreCase(source) && owner.toLowerCase(Locale.ROOT).startsWith("csv-");
     }
 
-    private Located checkOwner(SearchResultEntry e, PersonSpec spec, Profile p, SyncReport r) {
+    private Located checkOwner(final SearchResultEntry e, final PersonSpec spec, final Profile p, final SyncReport r) {
         String owner = e.getAttributeValue("acmeSource");
         if (owns(p.source(), owner)) {
             return new Located(e, true);
@@ -152,14 +152,14 @@ public class PersonWriter {
         return new Located(null, false);
     }
 
-    private void create(PersonSpec spec, Profile p, SyncReport r) throws LDAPException {
+    private void create(final PersonSpec spec, final Profile p, final SyncReport r) throws LDAPException {
         if (!spec.active()) {
             r.inc(key(p, "skippedInactive"));
             return;
         }
-        String dn = new DN(new RDN("uid", spec.uid()), new DN(p.ouDn())).toString();
-        Entry e = new Entry(dn);
-        List<String> classes = new ArrayList<>(p.objectClasses());
+        final String dn = new DN(new RDN("uid", spec.uid()), new DN(p.ouDn())).toString();
+        final Entry e = new Entry(dn);
+        final List<String> classes = new ArrayList<>(p.objectClasses());
         classes.add("acmeSyncManaged");
         e.addAttribute(new Attribute("objectClass", classes));
         e.addAttribute("uid", spec.uid());
@@ -177,8 +177,8 @@ public class PersonWriter {
             e.addAttribute("sn", spec.uid());
         }
         if (!e.hasAttribute("cn")) {
-            String given = e.getAttributeValue("givenName");
-            String sn = e.getAttributeValue("sn");
+            final String given = e.getAttributeValue("givenName");
+            final String sn = e.getAttributeValue("sn");
             e.addAttribute("cn", given == null ? sn : given + " " + sn);
         }
         if (spec.accountDns() != null && !spec.accountDns().isEmpty()) {
@@ -197,9 +197,10 @@ public class PersonWriter {
         r.inc(key(p, "created"));
     }
 
-    private void update(SearchResultEntry e, PersonSpec spec, Profile p, SyncReport r) throws LDAPException {
+    private void update(final SearchResultEntry e, final PersonSpec spec, final Profile p,
+                        final SyncReport r) throws LDAPException {
         String dn = e.getDN();
-        RDN wanted = new RDN("uid", spec.uid());
+        final RDN wanted = new RDN("uid", spec.uid());
         if (!new DN(dn).getRDN().equals(wanted)) {
             dir.modifyDn(dn, wanted.toString(), null);
             if (!dir.isDryRun()) {
@@ -208,10 +209,10 @@ public class PersonWriter {
             r.inc(key(p, "renamed"));
         }
 
-        List<Modification> mods = new ArrayList<>();
-        List<String> classes = new ArrayList<>(p.objectClasses());
+        final List<Modification> mods = new ArrayList<>();
+        final List<String> classes = new ArrayList<>(p.objectClasses());
         classes.add("acmeSyncManaged");
-        for (String oc : classes) {
+        for (final String oc : classes) {
             if (!e.hasObjectClass(oc)) {
                 mods.add(new Modification(ModificationType.ADD, "objectClass", oc));
             }
@@ -236,7 +237,7 @@ public class PersonWriter {
                     v -> true, true, v -> v.trim().toLowerCase(Locale.ROOT)));
         }
 
-        boolean deactivated = e.hasAttribute("acmeDeactivated");
+        final boolean deactivated = e.hasAttribute("acmeDeactivated");
         if (spec.active() && deactivated) {
             mods.add(new Modification(ModificationType.DELETE, "acmeDeactivated"));
             if (PERMANENT_LOCK.equals(e.getAttributeValue("pwdAccountLockedTime"))) {
@@ -262,9 +263,10 @@ public class PersonWriter {
                 new Modification(ModificationType.REPLACE, "acmeDeactivated", GENERALIZED_TIME.format(Instant.now())));
     }
 
-    private static void replaceIfDifferent(List<Modification> mods, Entry e, String name, List<String> desired) {
-        Set<String> have = new LinkedHashSet<>(values(e, name));
-        Set<String> want = new LinkedHashSet<>(desired);
+    private static void replaceIfDifferent(final List<Modification> mods, final Entry e, final String name,
+                                           final List<String> desired) {
+        final Set<String> have = new LinkedHashSet<>(values(e, name));
+        final Set<String> want = new LinkedHashSet<>(desired);
         if (have.equals(want)) {
             return;
         }
@@ -277,7 +279,7 @@ public class PersonWriter {
         mods.add(new Modification(ModificationType.REPLACE, name, want.toArray(String[]::new)));
     }
 
-    private static void addDiff(List<Modification> mods, String name, ValueDiff.Diff d) {
+    private static void addDiff(final List<Modification> mods, final String name, final ValueDiff.Diff d) {
         if (!d.add().isEmpty()) {
             mods.add(new Modification(ModificationType.ADD, name, d.add().toArray(String[]::new)));
         }
@@ -286,12 +288,12 @@ public class PersonWriter {
         }
     }
 
-    private static List<String> values(Entry e, String name) {
-        String[] v = e.getAttributeValues(name);
+    private static List<String> values(final Entry e, final String name) {
+        final String[] v = e.getAttributeValues(name);
         return v == null ? List.of() : Arrays.asList(v);
     }
 
-    private static String key(Profile p, String what) {
+    private static String key(final Profile p, final String what) {
         return p.userType() + "." + what;
     }
 }

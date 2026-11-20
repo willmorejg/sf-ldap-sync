@@ -42,17 +42,17 @@ public final class CsvRowMapper {
      *
      * @throws IllegalArgumentException for an unknown column or a missing uid column
      */
-    public static Map<String, String> canonicalHeader(Collection<String> header) {
-        Map<String, String> known = new LinkedHashMap<>();
-        for (String name : ATTRIBUTES) {
+    public static Map<String, String> canonicalHeader(final Collection<String> header) {
+        final Map<String, String> known = new LinkedHashMap<>();
+        for (final String name : ATTRIBUTES) {
             known.put(name.toLowerCase(Locale.ROOT), name);
         }
-        for (String name : CONTROL_COLUMNS) {
+        for (final String name : CONTROL_COLUMNS) {
             known.put(name.toLowerCase(Locale.ROOT), name);
         }
-        Map<String, String> out = new LinkedHashMap<>();
-        for (String col : header) {
-            String canonical = known.get(col.trim().toLowerCase(Locale.ROOT));
+        final Map<String, String> out = new LinkedHashMap<>();
+        for (final String col : header) {
+            final String canonical = known.get(col.trim().toLowerCase(Locale.ROOT));
             if (canonical == null) {
                 throw new IllegalArgumentException("Unknown CSV column '" + col + "'. Allowed: " + known.values());
             }
@@ -65,25 +65,25 @@ public final class CsvRowMapper {
     }
 
     /** @param row canonical column name to cell value, for the columns present in the file */
-    public static Row map(Map<String, String> row) {
-        String uid = trimToNull(row.get("uid"));
+    public static Row map(final Map<String, String> row) {
+        final String uid = trimToNull(row.get("uid"));
         if (uid == null) {
             throw new IllegalArgumentException("uid is empty");
         }
-        boolean active = !row.containsKey("active") || parseBoolean(row.get("active"));
-        Map<String, List<String>> attrs = new LinkedHashMap<>();
-        for (String attr : ATTRIBUTES) {
+        final boolean active = !row.containsKey("active") || parseBoolean(row.get("active"));
+        final Map<String, List<String>> attrs = new LinkedHashMap<>();
+        for (final String attr : ATTRIBUTES) {
             if (row.containsKey(attr)) {
                 attrs.put(attr, List.copyOf(split(row.get(attr))));
             }
         }
-        Set<String> accounts = row.containsKey("accounts") ? split(row.get("accounts")) : null;
-        Set<String> policies = row.containsKey("policyNumbers") ? split(row.get("policyNumbers")) : null;
-        Set<String> features = row.containsKey("features") ? split(row.get("features")) : null;
+        final Set<String> accounts = row.containsKey("accounts") ? split(row.get("accounts")) : null;
+        final Set<String> policies = row.containsKey("policyNumbers") ? split(row.get("policyNumbers")) : null;
+        final Set<String> features = row.containsKey("features") ? split(row.get("features")) : null;
         return new Row(new PersonSpec(uid, null, active, attrs, null, policies), accounts, features);
     }
 
-    static Set<String> split(String cell) {
+    static Set<String> split(final String cell) {
         if (cell == null) {
             return new LinkedHashSet<>();
         }
@@ -93,8 +93,8 @@ public final class CsvRowMapper {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
-    static boolean parseBoolean(String v) {
-        String s = v == null ? "" : v.trim().toLowerCase(Locale.ROOT);
+    static boolean parseBoolean(final String v) {
+        final String s = v == null ? "" : v.trim().toLowerCase(Locale.ROOT);
         return switch (s) {
             case "", "true", "yes", "y", "1" -> true;
             case "false", "no", "n", "0" -> false;
@@ -102,7 +102,7 @@ public final class CsvRowMapper {
         };
     }
 
-    private static String trimToNull(String s) {
+    private static String trimToNull(final String s) {
         return s == null || s.isBlank() ? null : s.trim();
     }
 }

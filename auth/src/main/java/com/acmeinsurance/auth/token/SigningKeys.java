@@ -49,23 +49,23 @@ public class SigningKeys {
     private final List<JsonWebKey> published = new ArrayList<>();
     private final String jwks;
 
-    public SigningKeys(AuthConfig cfg) throws IOException, GeneralSecurityException, JoseException {
-        Path file = Path.of(cfg.signing().keyFile());
+    public SigningKeys(final AuthConfig cfg) throws IOException, GeneralSecurityException, JoseException {
+        final Path file = Path.of(cfg.signing().keyFile());
         if (!Files.exists(file)) {
             if (!cfg.signing().generate()) {
                 throw new IllegalStateException("Signing key " + file + " does not exist and auth.signing.generate=false");
             }
             generate(file);
         }
-        RSAPrivateCrtKey priv = (RSAPrivateCrtKey) KeyFactory.getInstance("RSA")
+        final RSAPrivateCrtKey priv = (RSAPrivateCrtKey) KeyFactory.getInstance("RSA")
                 .generatePrivate(new PKCS8EncodedKeySpec(pem(Files.readString(file), "PRIVATE KEY")));
-        PublicKey pub = KeyFactory.getInstance("RSA")
+        final PublicKey pub = KeyFactory.getInstance("RSA")
                 .generatePublic(new RSAPublicKeySpec(priv.getModulus(), priv.getPublicExponent()));
         current = publicJwk(pub);
         current.setPrivateKey(priv);
 
         published.add(publicJwk(pub));
-        for (String prev : cfg.signing().previousPublicKeyFiles().orElse(List.of())) {
+        for (final String prev : cfg.signing().previousPublicKeyFiles().orElse(List.of())) {
             published.add(publicJwk(KeyFactory.getInstance("RSA")
                     .generatePublic(new X509EncodedKeySpec(pem(Files.readString(Path.of(prev)), "PUBLIC KEY")))));
         }
@@ -88,39 +88,39 @@ public class SigningKeys {
         return jwks;
     }
 
-    private static RsaJsonWebKey publicJwk(PublicKey pub) throws JoseException {
-        RsaJsonWebKey jwk = (RsaJsonWebKey) JsonWebKey.Factory.newJwk(pub);
+    private static RsaJsonWebKey publicJwk(final PublicKey pub) throws JoseException {
+        final RsaJsonWebKey jwk = (RsaJsonWebKey) JsonWebKey.Factory.newJwk(pub);
         jwk.setKeyId(jwk.calculateBase64urlEncodedThumbprint("SHA-256"));
         jwk.setUse("sig");
         jwk.setAlgorithm("RS256");
         return jwk;
     }
 
-    private static void generate(Path file) throws IOException, GeneralSecurityException {
-        KeyPairGenerator g = KeyPairGenerator.getInstance("RSA");
+    private static void generate(final Path file) throws IOException, GeneralSecurityException {
+        final KeyPairGenerator g = KeyPairGenerator.getInstance("RSA");
         g.initialize(3072);
-        KeyPair kp = g.generateKeyPair();
-        String body = Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+        final KeyPair kp = g.generateKeyPair();
+        final String body = Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
                 .encodeToString(kp.getPrivate().getEncoded());
-        String text = "-----BEGIN PRIVATE KEY-----\n" + body + "\n-----END PRIVATE KEY-----\n";
+        final String text = "-----BEGIN PRIVATE KEY-----\n" + body + "\n-----END PRIVATE KEY-----\n";
         if (file.getParent() != null) {
             Files.createDirectories(file.getParent());
         }
         Files.createFile(file);
         try {
             Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
-        } catch (UnsupportedOperationException e) {
+        } catch (final UnsupportedOperationException e) {
             // not a POSIX file system
         }
         Files.writeString(file, text, StandardOpenOption.TRUNCATE_EXISTING);
         LOG.warnf("Generated a new signing key at %s", file);
     }
 
-    private static byte[] pem(String text, String type) {
-        String begin = "-----BEGIN " + type + "-----";
-        String end = "-----END " + type + "-----";
-        int b = text.indexOf(begin);
-        int e = text.indexOf(end);
+    private static byte[] pem(final String text, final String type) {
+        final String begin = "-----BEGIN " + type + "-----";
+        final String end = "-----END " + type + "-----";
+        final int b = text.indexOf(begin);
+        final int e = text.indexOf(end);
         if (b < 0 || e < 0) {
             throw new IllegalArgumentException("Not a PEM " + type + " (PKCS#8 / X.509 expected)");
         }

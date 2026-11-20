@@ -14,6 +14,13 @@ import com.acmeinsurance.auth.token.AuthorizationStore.PendingLogin;
 import com.acmeinsurance.auth.token.Pkce;
 import com.unboundid.ldap.sdk.LDAPException;
 
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.enums.ParameterIn;
+
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import jakarta.ws.rs.Consumes;
@@ -35,7 +42,8 @@ import jakarta.ws.rs.core.UriBuilder;
  * administrator changes it here before getting a code.
  */
 @Path("/oauth2/authorize")
-public class AuthorizeResource {
+@Tag(name = "OAuth 2.0")
+public final class AuthorizeResource {
 
     private static final Logger LOG = Logger.getLogger(AuthorizeResource.class);
     private static final String INVALID = "Invalid username or password.";
@@ -45,8 +53,9 @@ public class AuthorizeResource {
     private final Template login;
     private final Template error;
 
-    public AuthorizeResource(Directory directory, AuthorizationStore store,
-                             @Location("login.html") Template login, @Location("error.html") Template error) {
+    public AuthorizeResource(final Directory directory, final AuthorizationStore store,
+                             @Location("login.html") final Template login,
+                             @Location("error.html") final Template error) {
         this.directory = directory;
         this.store = store;
         this.login = login;
@@ -55,14 +64,30 @@ public class AuthorizeResource {
 
     @GET
     @Produces(MediaType.TEXT_HTML)
-    public Response authorize(@QueryParam("response_type") String responseType,
-                              @QueryParam("client_id") String clientId,
-                              @QueryParam("redirect_uri") String redirectUri,
-                              @QueryParam("state") String state,
-                              @QueryParam("code_challenge") String challenge,
-                              @QueryParam("code_challenge_method") String challengeMethod) throws LDAPException {
+    @Operation(summary = "Start a sign-in (authorization code with PKCE)",
+            description = "Open this in the user's browser, not from code. Shows the login page; after a "
+                    + "successful sign-in the browser is redirected to redirect_uri with code and state. Errors "
+                    + "about the request are sent to redirect_uri as error and state; an unknown client or "
+                    + "unregistered redirect_uri shows an error page instead.")
+    @APIResponse(responseCode = "200", description = "Login page", content = @Content(mediaType = MediaType.TEXT_HTML))
+    @APIResponse(responseCode = "303", description = "Redirect to redirect_uri with error and state")
+    @APIResponse(responseCode = "400", description = "Unknown client or unregistered redirect_uri (error page)",
+            content = @Content(mediaType = MediaType.TEXT_HTML))
+    public Response authorize(
+            @Parameter(in = ParameterIn.QUERY, required = true, description = "Must be code")
+            @QueryParam("response_type") final String responseType,
+            @Parameter(in = ParameterIn.QUERY, required = true)
+            @QueryParam("client_id") final String clientId,
+            @Parameter(in = ParameterIn.QUERY, required = true, description = "One of the client's registered redirect URIs")
+            @QueryParam("redirect_uri") final String redirectUri,
+            @Parameter(in = ParameterIn.QUERY, description = "Opaque value returned unchanged; use it against CSRF")
+            @QueryParam("state") final String state,
+            @Parameter(in = ParameterIn.QUERY, required = true, description = "BASE64URL(SHA-256(code_verifier))")
+            @QueryParam("code_challenge") final String challenge,
+            @Parameter(in = ParameterIn.QUERY, required = true, description = "Must be S256")
+            @QueryParam("code_challenge_method") final String challengeMethod) throws LDAPException {
         // Until the client and redirect URI are known good, errors are shown, never redirected.
-        Client client = directory.findClient(clientId);
+        final Client client = directory.findClient(clientId);
         if (client == null) {
             return errorPage("Unknown application.");
         }
@@ -78,7 +103,7 @@ public class AuthorizeResource {
         if (!"S256".equals(challengeMethod) || !Pkce.wellFormed(challenge)) {
             return redirectError(redirectUri, state, "invalid_request", "PKCE with S256 is required");
         }
-        String id = store.newLogin(client.clientId(), redirectUri, state, challenge);
+        final String id = store.newLogin(client.clientId(), redirectUri, state, challenge);
         if (id == null) {
             return redirectError(redirectUri, state, "temporarily_unavailable", null);
         }
@@ -88,20 +113,26 @@ public class AuthorizeResource {
     @POST
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(MediaType.TEXT_HTML)
-    public Response submit(@FormParam("request_id") String requestId,
-                           @FormParam("username") String username,
+    @Operation(summary = "Login page form (browser only)",
+            description = "Posted by the login page, including its change-password form. Not an API: clients "
+                    + "must not collect passwords and post them here.")
+    @APIResponse(responseCode = "200", description = "Login page again, with a message",
+            content = @Content(mediaType = MediaType.TEXT_HTML))
+    @APIResponse(responseCode = "303", description = "Signed in: redirect to redirect_uri with code and state")
+    public Response submit(@FormParam("request_id") final String requestId,
+                           @FormParam("username") final String username,
                            @FormParam("password") String password,
-                           @FormParam("new_password") String newPassword,
-                           @FormParam("confirm_password") String confirmPassword) throws LDAPException {
-        PendingLogin pending = store.login(requestId);
+                           @FormParam("new_password") final String newPassword,
+                           @FormParam("confirm_password") final String confirmPassword) throws LDAPException {
+        final PendingLogin pending = store.login(requestId);
         if (pending == null) {
             return errorPage("This sign-in page has expired. Go back to the application and try again.");
         }
-        Client client = directory.findClient(pending.clientId());
+        final Client client = directory.findClient(pending.clientId());
         if (client == null) {
             return errorPage("Unknown application.");
         }
-        User user = directory.findByUsername(username);
+        final User user = directory.findByUsername(username);
         if (user == null || user.blocked()) {
             return page(client, requestId, username, INVALID, false);
         }
@@ -113,7 +144,7 @@ public class AuthorizeResource {
             if (newPassword.equals(password)) {
                 return page(client, requestId, username, "Choose a password different from the current one.", true);
             }
-            Directory.ChangeOutcome changed = directory.changePassword(user, password, newPassword);
+            final Directory.ChangeOutcome changed = directory.changePassword(user, password, newPassword);
             if (!changed.ok()) {
                 return page(client, requestId, username, changed.message(), true);
             }
@@ -121,7 +152,7 @@ public class AuthorizeResource {
             password = newPassword;
         }
 
-        BindOutcome outcome = directory.authenticate(user, password);
+        final BindOutcome outcome = directory.authenticate(user, password);
         switch (outcome) {
             case OK -> { }
             case MUST_CHANGE -> {
@@ -136,25 +167,26 @@ public class AuthorizeResource {
                 return page(client, requestId, username, INVALID, false);
             }
         }
-        User fresh = directory.findById(user.id());
+        final User fresh = directory.findById(user.id());
         if (fresh == null || fresh.disabled() || fresh.passwordReset()) {
             return page(client, requestId, username, INVALID, false);
         }
-        String code = store.newCode(pending, fresh.id(), Instant.now());
+        final String code = store.newCode(pending, fresh.id(), Instant.now());
         if (code == null) {
             return redirectError(pending.redirectUri(), pending.state(), "temporarily_unavailable", null);
         }
         store.finishLogin(requestId);
         LOG.infof("authorization code: %s for client %s", fresh.uid(), client.clientId());
-        UriBuilder ub = UriBuilder.fromUri(pending.redirectUri()).queryParam("code", code);
+        final UriBuilder ub = UriBuilder.fromUri(pending.redirectUri()).queryParam("code", code);
         if (pending.state() != null) {
             ub.queryParam("state", pending.state());
         }
         return Response.seeOther(ub.build()).cacheControl(noStore()).build();
     }
 
-    private Response page(Client client, String requestId, String username, String message, boolean change) {
-        String html = login.data("client", client.displayName())
+    private Response page(final Client client, final String requestId, final String username, final String message,
+                          final boolean change) {
+        final String html = login.data("client", client.displayName())
                 .data("requestId", requestId)
                 .data("username", username == null ? "" : username)
                 .data("message", message)
@@ -163,25 +195,26 @@ public class AuthorizeResource {
         return Response.ok(html, MediaType.TEXT_HTML_TYPE).cacheControl(noStore()).build();
     }
 
-    private Response errorPage(String message) {
+    private Response errorPage(final String message) {
         return Response.status(400).type(MediaType.TEXT_HTML_TYPE).cacheControl(noStore())
                 .entity(error.data("message", message).render()).build();
     }
 
-    private static Response redirectError(String redirectUri, String state, String code, String description) {
-        UriBuilder ub = UriBuilder.fromUri(redirectUri).queryParam("error", code);
+    private static Response redirectError(final String redirectUri, final String state, final String code,
+                                          final String description) {
+        final UriBuilder ub = UriBuilder.fromUri(redirectUri).queryParam("error", code);
         if (description != null) {
             ub.queryParam("error_description", description);
         }
         if (state != null) {
             ub.queryParam("state", state);
         }
-        URI target = ub.build();
+        final URI target = ub.build();
         return Response.seeOther(target).cacheControl(noStore()).build();
     }
 
     private static CacheControl noStore() {
-        CacheControl cc = new CacheControl();
+        final CacheControl cc = new CacheControl();
         cc.setNoStore(true);
         return cc;
     }

@@ -8,7 +8,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-class AccountTreePlannerTest {
+final class AccountTreePlannerTest {
 
     static final String BASE = "ou=agencies,ou=accounts,dc=acmeinsurance,dc=com";
 
@@ -16,21 +16,21 @@ class AccountTreePlannerTest {
     static final String AR = "001000000000002AAA";
     static final String BK = "001000000000003AAA";
 
-    static AccountNode agency(String id, String cn) {
+    static AccountNode agency(final String id, final String cn) {
         return new AccountNode(id, AccountLevel.AGENCY, cn, null, null);
     }
 
-    static AccountNode agreement(String id, String cn, String parent) {
+    static AccountNode agreement(final String id, final String cn, final String parent) {
         return new AccountNode(id, AccountLevel.AGREEMENT, cn, parent, null);
     }
 
-    static AccountNode book(String id, String cn, String parent) {
+    static AccountNode book(final String id, final String cn, final String parent) {
         return new AccountNode(id, AccountLevel.BOOK, cn, parent, null);
     }
 
     @Test
     void placesParentsBeforeChildrenWhateverTheInputOrder() {
-        var plan = AccountTreePlanner.plan(List.of(book(BK, "BK-311", AR), agreement(AR, "AGR-01", AG), agency(AG, "AG0042")), BASE);
+        final var plan = AccountTreePlanner.plan(List.of(book(BK, "BK-311", AR), agreement(AR, "AGR-01", AG), agency(AG, "AG0042")), BASE);
 
         assertEquals(List.of(AG, AR, BK), plan.ordered().stream().map(p -> p.node().sfId()).toList());
         assertEquals("cn=BK-311,cn=AGR-01,cn=AG0042," + BASE, plan.ordered().get(2).dn());
@@ -39,8 +39,8 @@ class AccountTreePlannerTest {
 
     @Test
     void rejectsMissingAndWrongLevelParentsAndTheirDescendants() {
-        String orphan = "001000000000009AAA";
-        var plan = AccountTreePlanner.plan(List.of(
+        final String orphan = "001000000000009AAA";
+        final var plan = AccountTreePlanner.plan(List.of(
                 agency(AG, "AG0042"),
                 book(BK, "BK-311", AG),                       // book directly under an agency
                 agreement(orphan, "AGR-09", "001000000000777AAA"), // parent not in result
@@ -56,8 +56,8 @@ class AccountTreePlannerTest {
 
     @Test
     void rejectsSiblingsWithTheSameCnButAllowsTheSameCnElsewhere() {
-        String ag2 = "001000000000004AAA";
-        var plan = AccountTreePlanner.plan(List.of(
+        final String ag2 = "001000000000004AAA";
+        final var plan = AccountTreePlanner.plan(List.of(
                 agency(AG, "AG0042"), agency(ag2, "AG0050"),
                 agreement("001000000000005AAA", "AGR-01", AG),
                 agreement("001000000000006AAA", "agr-01", AG),  // clashes (cn is case-insensitive)
@@ -69,19 +69,19 @@ class AccountTreePlannerTest {
 
     @Test
     void escapesSpecialCharactersInCn() {
-        var plan = AccountTreePlanner.plan(List.of(agency(AG, "Smith, Jones + Co")), BASE);
+        final var plan = AccountTreePlanner.plan(List.of(agency(AG, "Smith, Jones + Co")), BASE);
         assertEquals("cn=Smith\\, Jones \\+ Co," + BASE, plan.ordered().get(0).dn());
     }
 
     @Test
     void mapperSkipsUnknownRecordTypesAndFallsBackToIdForCn() {
-        var mapping = new AccountMapper.Mapping("Id", "ParentId", "RecordType.DeveloperName", "AccountNumber", "Name",
-                Map.of("Agency", AccountLevel.AGENCY));
-        List<Map<String, Object>> rows = List.of(
+        final var mapping = new AccountMapper.Mapping("Id", "ParentId", "RecordType.DeveloperName", "AccountNumber",
+                "Name", Map.of("Agency", AccountLevel.AGENCY));
+        final List<Map<String, Object>> rows = List.of(
                 Map.of("Id", "001000000000001", "Name", "Example", "RecordType", Map.of("DeveloperName", "Agency")),
                 Map.of("Id", "001000000000002", "RecordType", Map.of("DeveloperName", "Household")));
 
-        var result = AccountMapper.map(rows, mapping);
+        final var result = AccountMapper.map(rows, mapping);
 
         assertEquals(1, result.nodes().size());
         assertEquals(1, result.skipped());

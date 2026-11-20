@@ -16,12 +16,12 @@ public class LdapProducer {
     /** Created on first use, so the app still starts while OpenLDAP is down. */
     @Produces
     @Singleton
-    LdapDirectory directory(SyncConfig cfg) throws LDAPException, GeneralSecurityException {
-        SyncConfig.Ldap l = cfg.ldap();
+    LdapDirectory directory(final SyncConfig cfg) throws LDAPException, GeneralSecurityException {
+        final SyncConfig.Ldap l = cfg.ldap();
         return new LdapDirectory(l.url(), l.bindDn(), l.bindPassword(), l.poolSize(), cfg.safety().dryRun());
     }
 
-    void close(@Disposes LdapDirectory directory) {
+    void close(@Disposes final LdapDirectory directory) {
         directory.close();
     }
 }

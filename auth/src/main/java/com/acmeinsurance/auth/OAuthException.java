@@ -10,28 +10,29 @@ import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
 
 /** An RFC 6749 error response from the token endpoint. */
-public class OAuthException extends RuntimeException {
+public final class OAuthException extends RuntimeException {
 
     private final int status;
     private final String error;
     private final boolean basicChallenge;
 
-    public OAuthException(int status, String error, String description) {
+    public OAuthException(final int status, final String error, final String description) {
         this(status, error, description, false);
     }
 
-    public OAuthException(int status, String error, String description, boolean basicChallenge) {
+    public OAuthException(final int status, final String error, final String description,
+                          final boolean basicChallenge) {
         super(description);
         this.status = status;
         this.error = error;
         this.basicChallenge = basicChallenge;
     }
 
-    public static OAuthException invalidRequest(String description) {
+    public static OAuthException invalidRequest(final String description) {
         return new OAuthException(400, "invalid_request", description);
     }
 
-    public static OAuthException invalidGrant(String description) {
+    public static OAuthException invalidGrant(final String description) {
         return new OAuthException(400, "invalid_grant", description);
     }
 
@@ -40,17 +41,17 @@ public class OAuthException extends RuntimeException {
     }
 
     @Provider
-    public static class Mapper implements ExceptionMapper<OAuthException> {
+    public static final class Mapper implements ExceptionMapper<OAuthException> {
         @Override
-        public Response toResponse(OAuthException e) {
-            Map<String, String> body = new LinkedHashMap<>();
+        public Response toResponse(final OAuthException e) {
+            final Map<String, String> body = new LinkedHashMap<>();
             body.put("error", e.error);
             if (e.getMessage() != null) {
                 body.put("error_description", e.getMessage());
             }
-            CacheControl cc = new CacheControl();
+            final CacheControl cc = new CacheControl();
             cc.setNoStore(true);
-            Response.ResponseBuilder rb = Response.status(e.status).type(MediaType.APPLICATION_JSON_TYPE)
+            final Response.ResponseBuilder rb = Response.status(e.status).type(MediaType.APPLICATION_JSON_TYPE)
                     .cacheControl(cc).header("Pragma", "no-cache").entity(body);
             if (e.basicChallenge) {
                 rb.header("WWW-Authenticate", "Basic realm=\"acmeinsurance\"");

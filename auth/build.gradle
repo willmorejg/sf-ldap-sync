@@ -22,6 +22,7 @@ dependencies {
     implementation 'io.quarkus:quarkus-rest'
     implementation 'io.quarkus:quarkus-rest-jackson'
     implementation 'io.quarkus:quarkus-rest-qute'
+    implementation 'io.quarkus:quarkus-smallrye-openapi'
     implementation 'org.bitbucket.b_c:jose4j'
     implementation "com.unboundid:unboundid-ldapsdk:${unboundidVersion}"
 

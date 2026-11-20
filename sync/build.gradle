@@ -27,7 +27,12 @@ dependencies {
     implementation 'org.apache.camel.quarkus:camel-quarkus-timer'
     implementation 'org.apache.camel.quarkus:camel-quarkus-file'
     implementation 'org.apache.camel.quarkus:camel-quarkus-platform-http'
+    implementation 'org.apache.camel.quarkus:camel-quarkus-rest'
+    implementation 'org.apache.camel.quarkus:camel-quarkus-direct'
+    // Generates the OpenAPI document from the REST DSL in routes/*.camel.yaml
+    implementation 'org.apache.camel.quarkus:camel-quarkus-openapi-java'
     implementation 'org.apache.camel.quarkus:camel-quarkus-jackson'
+    implementation 'io.quarkus:quarkus-smallrye-openapi'
     // Brings a managed commons-csv version; parsing is done in CsvIntakeService.
     implementation 'org.apache.camel.quarkus:camel-quarkus-csv'
     implementation "com.unboundid:unboundid-ldapsdk:${unboundidVersion}"

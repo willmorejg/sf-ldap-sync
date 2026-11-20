@@ -30,27 +30,114 @@
         - to: bean:salesforceSync?method=fullSync
         - log: "Startup Salesforce sync: ${body}"
 
-# Manual trigger and last result:
+# Manual trigger and last result, as REST DSL so camel-quarkus-openapi-java can
+# describe it in /q/openapi (and Swagger UI at /q/swagger-ui):
 #   curl -X POST localhost:8080/sync/salesforce
 #   curl localhost:8080/sync/salesforce
+# The REST endpoints always exist, so the OpenAPI document always lists them. With
+# sync.salesforce.enabled=false the direct: routes below are replaced by the
+# "disabled" variants, which answer 503 (the preconditions pick exactly one of each).
+- restConfiguration:
+    apiProperty:
+      - key: api.title
+        value: Acme Insurance LDAP sync
+      - key: api.version
+        value: 0.1.0
+      - key: api.description
+        value: >-
+          Keeps the OpenLDAP directory in step with Salesforce. People who are not
+          in Salesforce come from CSV files in the inbox folder, which has no HTTP API.
+          When the Salesforce sync is turned off (SF_ENABLED=false) the endpoints
+          answer 503. They have no authentication (the port is published on
+          loopback only). Sequence diagrams:
+          docs/sequence/salesforce-sync.md.
+- rest:
+    id: salesforce-sync-api
+    path: /sync/salesforce
+    tag: Salesforce sync
+    description: Run the Salesforce sync on demand and read its last report
+    post:
+      - id: runSalesforceSync
+        description: Run a full Salesforce sync now and wait for its report
+        produces: application/json
+        responseMessage:
+          - code: "200"
+            message: >-
+              The report of this run: sync, started, seconds, counts, errors and
+              warnings. If a run is already in progress, {"status": "skipped: a sync
+              is already running"} instead. With DRY_RUN=true, writes are logged,
+              not made.
+          - code: "503"
+            message: >-
+              The Salesforce sync is turned off (SF_ENABLED=false):
+              {"status": "disabled: the Salesforce sync is turned off (SF_ENABLED=false)"}
+        to: direct:salesforce-sync-now
+    get:
+      - id: lastSalesforceSync
+        description: Report of the last Salesforce sync
+        produces: application/json
+        responseMessage:
+          - code: "200"
+            message: >-
+              The report of the last run from any trigger, or {"status": "no run
+              yet"}. Reports are not kept across restarts.
+          - code: "503"
+            message: The Salesforce sync is turned off (SF_ENABLED=false)
+        to: direct:salesforce-sync-last
+
 - route:
-    id: salesforce-sync-http
+    id: salesforce-sync-now
     precondition: "{{sync.salesforce.enabled}}"
     from:
-      uri: platform-http:/sync/salesforce
+      uri: direct:salesforce-sync-now
       steps:
-        - choice:
-            when:
-              - simple: "${header.CamelHttpMethod} == 'POST'"
-                steps:
-                  - to: bean:salesforceSync?method=fullSync
-            otherwise:
-              steps:
-                - to: bean:salesforceSync?method=lastReport
+        - to: bean:salesforceSync?method=fullSync
         - marshal:
             json:
               library: Jackson
               prettyPrint: true
+- route:
+    id: salesforce-sync-last
+    precondition: "{{sync.salesforce.enabled}}"
+    from:
+      uri: direct:salesforce-sync-last
+      steps:
+        - to: bean:salesforceSync?method=lastReport
+        - marshal:
+            json:
+              library: Jackson
+              prettyPrint: true
+
+# SF_ENABLED=false: the same direct: endpoints answer 503 instead of calling the
+# Salesforce service (whose component is not configured then).
+- route:
+    id: salesforce-sync-now-disabled
+    precondition: "{{!sync.salesforce.enabled}}"
+    from:
+      uri: direct:salesforce-sync-now
+      steps:
+        - to: direct:salesforce-sync-disabled
+- route:
+    id: salesforce-sync-last-disabled
+    precondition: "{{!sync.salesforce.enabled}}"
+    from:
+      uri: direct:salesforce-sync-last
+      steps:
+        - to: direct:salesforce-sync-disabled
+- route:
+    id: salesforce-sync-disabled
+    precondition: "{{!sync.salesforce.enabled}}"
+    from:
+      uri: direct:salesforce-sync-disabled
+      steps:
+        - setHeader:
+            name: CamelHttpResponseCode
+            constant: 503
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - setBody:
+            constant: '{"status": "disabled: the Salesforce sync is turned off (SF_ENABLED=false)"}'
 
 # Near-real-time updates (off by default; sync.cdc.enabled=true). A precondition,
 # not autoStartup, because creating the subscribe endpoint starts the component.

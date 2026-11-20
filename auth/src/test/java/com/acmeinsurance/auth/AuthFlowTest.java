@@ -63,9 +63,9 @@ class AuthFlowTest {
     }
 
     /** Adds an agent with a password and the given feature and account grants. */
-    private static void agent(String uid, List<String> features, List<String> accounts, String... extra)
-            throws Exception {
-        List<String> lines = new ArrayList<>(List.of("dn: uid=" + uid + "," + AGENTS,
+    private static void agent(final String uid, final List<String> features, final List<String> accounts,
+                              final String... extra) throws Exception {
+        final List<String> lines = new ArrayList<>(List.of("dn: uid=" + uid + "," + AGENTS,
                 "objectClass: inetOrgPerson", "objectClass: acmeUser", "objectClass: acmeAccountAccess",
                 "objectClass: acmeFeatureAccess", "uid: " + uid, "cn: Test " + uid, "sn: " + uid,
                 "mail: " + uid + "@agency.example", "acmeUserType: agent", "userPassword: " + PASSWORD));
@@ -75,7 +75,7 @@ class AuthFlowTest {
         ldap().add(lines.toArray(String[]::new));
     }
 
-    private static Response passwordGrant(String username, String password) {
+    private static Response passwordGrant(final String username, final String password) {
         return given().auth().preemptive().basic("demo-app", DEMO_APP_SECRET)
                 .formParam("grant_type", "password")
                 .formParam("username", username)
@@ -83,7 +83,7 @@ class AuthFlowTest {
                 .post("/oauth2/token");
     }
 
-    private static Response refresh(String refreshToken, String clientId, String secret) {
+    private static Response refresh(final String refreshToken, final String clientId, final String secret) {
         var req = given();
         if (secret != null) {
             req = req.auth().preemptive().basic(clientId, secret);
@@ -94,9 +94,9 @@ class AuthFlowTest {
                 .post("/oauth2/token");
     }
 
-    private static JwtClaims verify(String accessToken) throws Exception {
-        String jwks = given().get("/oauth2/jwks").then().statusCode(200).extract().asString();
-        JwtConsumer consumer = new JwtConsumerBuilder()
+    private static JwtClaims verify(final String accessToken) throws Exception {
+        final String jwks = given().get("/oauth2/jwks").then().statusCode(200).extract().asString();
+        final JwtConsumer consumer = new JwtConsumerBuilder()
                 .setRequireExpirationTime()
                 .setExpectedIssuer("http://auth.test")
                 .setExpectedAudience("acmeinsurance")
@@ -107,7 +107,7 @@ class AuthFlowTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, List<String>> map(JwtClaims c, String name) {
+    private static Map<String, List<String>> map(final JwtClaims c, final String name) {
         return (Map<String, List<String>>) c.getClaimValue(name);
     }
 
@@ -119,8 +119,8 @@ class AuthFlowTest {
                 .body("issuer", equalTo("http://auth.test"))
                 .body("token_endpoint", equalTo("http://auth.test/oauth2/token"))
                 .body("code_challenge_methods_supported[0]", equalTo("S256"));
-        String jwks = given().get("/oauth2/jwks").then().statusCode(200).extract().asString();
-        JsonWebKeySet set = new JsonWebKeySet(jwks);
+        final String jwks = given().get("/oauth2/jwks").then().statusCode(200).extract().asString();
+        final JsonWebKeySet set = new JsonWebKeySet(jwks);
         assertEquals(1, set.getJsonWebKeys().size());
         assertEquals("RSA", set.getJsonWebKeys().get(0).getKeyType());
         assertFalse(jwks.contains("\"d\""), "private key material in JWKS");
@@ -132,17 +132,17 @@ class AuthFlowTest {
     void agentTokenCarriesPermissionGrantAndHeldAccounts() throws Exception {
         agent("claims.one", List.of(READ_QUOTES), List.of(AGR_01));
 
-        Response r = passwordGrant("claims.one", PASSWORD);
+        final Response r = passwordGrant("claims.one", PASSWORD);
         r.then().statusCode(200).header("Cache-Control", containsString("no-store"))
                 .body("token_type", equalTo("Bearer"));
-        JwtClaims c = verify(r.path("access_token"));
+        final JwtClaims c = verify(r.path("access_token"));
 
         assertEquals("claims.one", c.getStringClaimValue("preferred_username"));
         assertEquals("agent", c.getStringClaimValue("user_type"));
         assertEquals("demo-app", c.getStringClaimValue("client_id"));
         assertEquals(ldap().get("uid=claims.one," + AGENTS).getAttributeValue("entryUUID"), c.getSubject());
         assertEquals(Map.of("quoting", List.of("read-quotes")), map(c, "features"));
-        Map<String, List<String>> accounts = map(c, "accounts");
+        final Map<String, List<String>> accounts = map(c, "accounts");
         assertEquals(List.of("AG0042/AGR-0042-01"), accounts.get("agreements"));
         assertEquals(List.of(), accounts.get("agencies"));
         assertEquals(List.of(), accounts.get("books"));
@@ -156,11 +156,11 @@ class AuthFlowTest {
         agent("claims.two", List.of(QUOTING, READ_QUOTES),
                 List.of(AG0042, BK_340, "cn=100234," + CLIENT_ACCOUNTS));
 
-        JwtClaims c = verify(passwordGrant("claims.two", PASSWORD).then().statusCode(200).extract()
+        final JwtClaims c = verify(passwordGrant("claims.two", PASSWORD).then().statusCode(200).extract()
                 .path("access_token"));
 
         assertEquals(Map.of("quoting", List.of("read-quotes", "write-quotes")), map(c, "features"));
-        Map<String, List<String>> accounts = map(c, "accounts");
+        final Map<String, List<String>> accounts = map(c, "accounts");
         assertEquals(List.of("AG0042"), accounts.get("agencies"));
         assertEquals(List.of("AG0042/AGR-0042-02/BK-000340"), accounts.get("books"));
         assertEquals(List.of("100234"), accounts.get("clients"));
@@ -173,7 +173,7 @@ class AuthFlowTest {
                 "acmeUserType: member", "acmePolicyNumber: POL-2024-98765", "acmePolicyNumber: POL-2024-11111",
                 "userPassword: " + PASSWORD);
 
-        JwtClaims c = verify(passwordGrant("member.one", PASSWORD).then().statusCode(200).extract()
+        final JwtClaims c = verify(passwordGrant("member.one", PASSWORD).then().statusCode(200).extract()
                 .path("access_token"));
 
         assertEquals("member", c.getStringClaimValue("user_type"));
@@ -189,7 +189,7 @@ class AuthFlowTest {
                 "sn: Csr", "acmeUserType: internal", "acmeFeatureDN: cn=claims," + FEATURES,
                 "acmeAccountDN: " + AG0042, "userPassword: " + PASSWORD);
 
-        JwtClaims c = verify(passwordGrant("carol.csr", PASSWORD).then().statusCode(200).extract()
+        final JwtClaims c = verify(passwordGrant("carol.csr", PASSWORD).then().statusCode(200).extract()
                 .path("access_token"));
 
         assertEquals("internal", c.getStringClaimValue("user_type"));
@@ -206,7 +206,7 @@ class AuthFlowTest {
                 "acmeFeatureDN: cn=view-claims,cn=claims," + FEATURES, "acmeAccountDN: " + AG0042,
                 "userPassword: " + PASSWORD);
 
-        JwtClaims c = verify(passwordGrant("casey", PASSWORD).then().statusCode(200).extract()
+        final JwtClaims c = verify(passwordGrant("casey", PASSWORD).then().statusCode(200).extract()
                 .path("access_token"));
 
         assertEquals(Map.of("claims", List.of("view-claims")), map(c, "features"));
@@ -219,7 +219,7 @@ class AuthFlowTest {
         agent("bad.pw", List.of(), List.of());
         agent("gone", List.of(), List.of(), "objectClass: acmeSyncManaged", "acmeDeactivated: 20261101000000Z");
 
-        for (Response r : List.of(passwordGrant("bad.pw", "nope-nope-nope"), passwordGrant("nobody", PASSWORD),
+        for (final Response r : List.of(passwordGrant("bad.pw", "nope-nope-nope"), passwordGrant("nobody", PASSWORD),
                 passwordGrant("gone", PASSWORD))) {
             r.then().statusCode(400).body("error", equalTo("invalid_grant"))
                     .body("error_description", equalTo("invalid username or password"));
@@ -262,14 +262,14 @@ class AuthFlowTest {
     @Test
     void refreshRereadsGrantsFromTheDirectory() throws Exception {
         agent("refresh.one", List.of(QUOTING), List.of(AGR_01));
-        String rt = passwordGrant("refresh.one", PASSWORD).then().statusCode(200).extract().path("refresh_token");
+        final String rt = passwordGrant("refresh.one", PASSWORD).then().statusCode(200).extract().path("refresh_token");
 
         ldap().modify("dn: uid=refresh.one," + AGENTS, "changetype: modify",
                 "replace: acmeFeatureDN", "acmeFeatureDN: " + READ_QUOTES,
                 "-", "add: acmeAccountDN", "acmeAccountDN: " + BK_340);
-        Response r = refresh(rt, "demo-app", DEMO_APP_SECRET);
+        final Response r = refresh(rt, "demo-app", DEMO_APP_SECRET);
         r.then().statusCode(200);
-        JwtClaims c = verify(r.path("access_token"));
+        final JwtClaims c = verify(r.path("access_token"));
 
         assertEquals(Map.of("quoting", List.of("read-quotes")), map(c, "features"));
         assertEquals(List.of("AG0042/AGR-0042-02/BK-000340"), map(c, "accounts").get("books"));
@@ -280,8 +280,10 @@ class AuthFlowTest {
     void refreshIsRefusedAfterDeactivationPasswordChangeOrForAnotherClient() throws Exception {
         agent("refresh.two", List.of(), List.of(), "objectClass: acmeSyncManaged");
         agent("refresh.three", List.of(), List.of());
-        String rt2 = passwordGrant("refresh.two", PASSWORD).then().statusCode(200).extract().path("refresh_token");
-        String rt3 = passwordGrant("refresh.three", PASSWORD).then().statusCode(200).extract().path("refresh_token");
+        final String rt2 = passwordGrant("refresh.two", PASSWORD).then().statusCode(200)
+                .extract().path("refresh_token");
+        final String rt3 = passwordGrant("refresh.three", PASSWORD).then().statusCode(200)
+                .extract().path("refresh_token");
 
         // demo-spa is public: it may not refresh at all, let alone another client's token.
         refresh(rt2, "demo-spa", null).then().statusCode(400).body("error", equalTo("unauthorized_client"));
@@ -300,7 +302,7 @@ class AuthFlowTest {
     @Test
     void anAccessTokenIsNotARefreshToken() throws Exception {
         agent("refresh.four", List.of(), List.of());
-        String at = passwordGrant("refresh.four", PASSWORD).then().statusCode(200).extract().path("access_token");
+        final String at = passwordGrant("refresh.four", PASSWORD).then().statusCode(200).extract().path("access_token");
         refresh(at, "demo-app", DEMO_APP_SECRET).then().statusCode(400).body("error", equalTo("invalid_grant"));
         refresh("not.a.jwt", "demo-app", DEMO_APP_SECRET).then().statusCode(400).body("error", equalTo("invalid_grant"));
     }
@@ -308,12 +310,12 @@ class AuthFlowTest {
     // ---- authorization code + PKCE ----------------------------------------
 
     private static String verifier() {
-        byte[] b = new byte[32];
+        final byte[] b = new byte[32];
         RANDOM.nextBytes(b);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(b);
     }
 
-    private static Response authorize(String clientId, String redirect, String challenge) {
+    private static Response authorize(final String clientId, final String redirect, final String challenge) {
         var req = given().redirects().follow(false)
                 .queryParam("response_type", "code").queryParam("client_id", clientId)
                 .queryParam("redirect_uri", redirect).queryParam("state", "xyz");
@@ -323,30 +325,30 @@ class AuthFlowTest {
         return req.get("/oauth2/authorize");
     }
 
-    private static String requestId(String html) {
-        Matcher m = Pattern.compile("name=\"request_id\" value=\"([^\"]+)\"").matcher(html);
+    private static String requestId(final String html) {
+        final Matcher m = Pattern.compile("name=\"request_id\" value=\"([^\"]+)\"").matcher(html);
         assertTrue(m.find(), html);
         return m.group(1);
     }
 
-    private static Response login(String requestId, Map<String, String> fields) {
+    private static Response login(final String requestId, final Map<String, String> fields) {
         var req = given().redirects().follow(false).formParam("request_id", requestId);
-        for (var f : fields.entrySet()) {
+        for (final var f : fields.entrySet()) {
             req = req.formParam(f.getKey(), f.getValue());
         }
         return req.post("/oauth2/authorize");
     }
 
-    private static Map<String, String> query(String location) {
-        Map<String, String> out = new LinkedHashMap<>();
-        for (String p : URI.create(location).getRawQuery().split("&")) {
-            String[] kv = p.split("=", 2);
+    private static Map<String, String> query(final String location) {
+        final Map<String, String> out = new LinkedHashMap<>();
+        for (final String p : URI.create(location).getRawQuery().split("&")) {
+            final String[] kv = p.split("=", 2);
             out.put(kv[0], java.net.URLDecoder.decode(kv[1], java.nio.charset.StandardCharsets.UTF_8));
         }
         return out;
     }
 
-    private static Response exchange(String code, String verifier) {
+    private static Response exchange(final String code, final String verifier) {
         return given().formParam("client_id", "demo-spa").formParam("grant_type", "authorization_code")
                 .formParam("code", code).formParam("redirect_uri", REDIRECT).formParam("code_verifier", verifier)
                 .post("/oauth2/token");
@@ -355,31 +357,31 @@ class AuthFlowTest {
     @Test
     void authorizationCodeWithPkceIssuesTokensOnceOnly() throws Exception {
         agent("code.one", List.of(READ_QUOTES), List.of(AGR_01));
-        String verifier = verifier();
-        Response page = authorize("demo-spa", REDIRECT, Pkce.challenge(verifier));
+        final String verifier = verifier();
+        final Response page = authorize("demo-spa", REDIRECT, Pkce.challenge(verifier));
         page.then().statusCode(200).body(containsString("Demo single-page app"))
                 .header("X-Frame-Options", "DENY");
 
-        String id = requestId(page.asString());
+        final String id = requestId(page.asString());
         login(id, Map.of("username", "code.one", "password", "wrong-password-x")).then().statusCode(200)
                 .body(containsString("Invalid username or password"));
-        Response ok = login(id, Map.of("username", "code.one", "password", PASSWORD));
+        final Response ok = login(id, Map.of("username", "code.one", "password", PASSWORD));
         ok.then().statusCode(303).header("Location", startsWith(REDIRECT + "?"));
-        Map<String, String> q = query(ok.header("Location"));
+        final Map<String, String> q = query(ok.header("Location"));
         assertEquals("xyz", q.get("state"));
 
         exchange(q.get("code"), verifier()).then().statusCode(400).body("error", equalTo("invalid_grant"));
         // A failed exchange still uses up the code.
         exchange(q.get("code"), verifier).then().statusCode(400).body("error", equalTo("invalid_grant"));
 
-        String verifier2 = verifier();
-        String id2 = requestId(authorize("demo-spa", REDIRECT, Pkce.challenge(verifier2)).asString());
-        String code2 = query(login(id2, Map.of("username", "code.one", "password", PASSWORD)).header("Location"))
+        final String verifier2 = verifier();
+        final String id2 = requestId(authorize("demo-spa", REDIRECT, Pkce.challenge(verifier2)).asString());
+        final String code2 = query(login(id2, Map.of("username", "code.one", "password", PASSWORD)).header("Location"))
                 .get("code");
-        Response tokens = exchange(code2, verifier2);
+        final Response tokens = exchange(code2, verifier2);
         tokens.then().statusCode(200);
         assertNull(tokens.path("refresh_token"), "public clients get no refresh token");
-        JwtClaims c = verify(tokens.path("access_token"));
+        final JwtClaims c = verify(tokens.path("access_token"));
         assertEquals("demo-spa", c.getStringClaimValue("client_id"));
         assertEquals(Map.of("quoting", List.of("read-quotes")), map(c, "features"));
         exchange(code2, verifier2).then().statusCode(400).body("error", equalTo("invalid_grant"));
@@ -394,9 +396,9 @@ class AuthFlowTest {
         authorize("demo-spa", "https://evil.example/cb", Pkce.challenge(verifier())).then().statusCode(400)
                 .body(containsString("not registered"));
         authorize("no-such-client", REDIRECT, Pkce.challenge(verifier())).then().statusCode(400);
-        Response r = authorize("demo-spa", REDIRECT, null);
+        final Response r = authorize("demo-spa", REDIRECT, null);
         r.then().statusCode(303);
-        Map<String, String> q = query(r.header("Location"));
+        final Map<String, String> q = query(r.header("Location"));
         assertEquals("invalid_request", q.get("error"));
         assertEquals("xyz", q.get("state"));
         assertNull(q.get("code"));
@@ -405,15 +407,15 @@ class AuthFlowTest {
     @Test
     void userWithAResetPasswordChangesItAtSignIn() throws Exception {
         agent("code.reset", List.of(), List.of(), "pwdReset: TRUE");
-        String verifier = verifier();
-        String id = requestId(authorize("demo-spa", REDIRECT, Pkce.challenge(verifier)).asString());
+        final String verifier = verifier();
+        final String id = requestId(authorize("demo-spa", REDIRECT, Pkce.challenge(verifier)).asString());
 
         login(id, Map.of("username", "code.reset", "password", PASSWORD)).then().statusCode(200)
                 .body(containsString("Choose a new password")).body(containsString("new_password"));
         login(id, Map.of("username", "code.reset", "password", PASSWORD, "new_password", "New-Password-12345",
                 "confirm_password", "Different-12345")).then().statusCode(200)
                 .body(containsString("do not match"));
-        Response ok = login(id, Map.of("username", "code.reset", "password", PASSWORD,
+        final Response ok = login(id, Map.of("username", "code.reset", "password", PASSWORD,
                 "new_password", "New-Password-12345", "confirm_password", "New-Password-12345"));
         ok.then().statusCode(303);
 

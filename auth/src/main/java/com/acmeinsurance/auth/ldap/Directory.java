@@ -100,7 +100,7 @@ public class Directory {
     public record Client(String dn, String clientId, String displayName, boolean confidential,
                          Set<String> redirectUris, Set<String> grantTypes) {
 
-        public boolean allows(String grantType) {
+        public boolean allows(final String grantType) {
             return grantTypes.contains(grantType);
         }
     }
@@ -109,7 +109,7 @@ public class Directory {
     public record Accounts(List<String> agencies, List<String> agreements, List<String> books, List<String> clients) {
 
         public Map<String, List<String>> asClaim() {
-            Map<String, List<String>> m = new TreeMap<>();
+            final Map<String, List<String>> m = new TreeMap<>();
             m.put("agencies", agencies);
             m.put("agreements", agreements);
             m.put("books", books);
@@ -130,18 +130,18 @@ public class Directory {
     private LDAPConnectionOptions options;
     private LDAPURL url;
 
-    public Directory(AuthConfig cfg) throws LDAPException {
+    public Directory(final AuthConfig cfg) throws LDAPException {
         this.cfg = cfg;
         this.base = new DN(cfg.ldap().baseDn());
         this.people = child("ou=people", base);
         this.features = child("ou=features", base);
-        DN accounts = child("ou=accounts", base);
+        final DN accounts = child("ou=accounts", base);
         this.agencies = child("ou=agencies", accounts);
         this.clientAccounts = child("ou=clients", accounts);
         this.oauthClients = child("ou=oauth-clients", child("ou=services", base));
     }
 
-    void start(@Observes StartupEvent ev) throws LDAPException, GeneralSecurityException {
+    void start(@Observes final StartupEvent ev) throws LDAPException, GeneralSecurityException {
         url = new LDAPURL(cfg.ldap().url());
         options = new LDAPConnectionOptions();
         options.setConnectTimeoutMillis(10_000);
@@ -150,14 +150,14 @@ public class Directory {
         socketFactory = "ldaps".equalsIgnoreCase(url.getScheme())
                 ? new SSLUtil(JVMDefaultTrustManager.getInstance()).createSSLSocketFactory()
                 : SocketFactory.getDefault();
-        LDAPConnection first = connect();
+        final LDAPConnection first = connect();
         first.bind(cfg.ldap().bindDn(), cfg.ldap().bindPassword());
         pool = new LDAPConnectionPool(first, 1, Math.max(1, cfg.ldap().poolSize()));
         pool.setRetryFailedOperationsDueToInvalidConnections(true);
         LOG.infof("Directory: %s as %s", cfg.ldap().url(), cfg.ldap().bindDn());
     }
 
-    void stop(@Observes ShutdownEvent ev) {
+    void stop(@Observes final ShutdownEvent ev) {
         if (pool != null) {
             pool.close();
         }
@@ -166,7 +166,7 @@ public class Directory {
     // ---- users -------------------------------------------------------------
 
     /** The user with this login name (uid) anywhere under ou=people, or null. */
-    public User findByUsername(String username) throws LDAPException {
+    public User findByUsername(final String username) throws LDAPException {
         if (username == null || username.isBlank()) {
             return null;
         }
@@ -174,26 +174,26 @@ public class Directory {
     }
 
     /** The user with this entryUUID (the token subject), or null. Survives renames and moves. */
-    public User findById(String id) throws LDAPException {
+    public User findById(final String id) throws LDAPException {
         return findUser(Filter.createEqualityFilter("entryUUID", id));
     }
 
-    private User findUser(Filter f) throws LDAPException {
-        Filter filter = Filter.createANDFilter(f, Filter.createEqualityFilter("objectClass", "acmeUser"));
-        SearchResult r = pool.search(people.toString(), SearchScope.SUB, filter, USER_ATTRS);
+    private User findUser(final Filter f) throws LDAPException {
+        final Filter filter = Filter.createANDFilter(f, Filter.createEqualityFilter("objectClass", "acmeUser"));
+        final SearchResult r = pool.search(people.toString(), SearchScope.SUB, filter, USER_ATTRS);
         if (r.getEntryCount() != 1) {
             return null; // none, or (impossible with the unique overlay) ambiguous
         }
         return toUser(r.getSearchEntries().get(0));
     }
 
-    private static User toUser(SearchResultEntry e) {
-        String changed = e.getAttributeValue("pwdChangedTime");
+    private static User toUser(final SearchResultEntry e) {
+        final String changed = e.getAttributeValue("pwdChangedTime");
         Instant changedAt = null;
         if (changed != null) {
             try {
                 changedAt = StaticUtils.decodeGeneralizedTime(changed).toInstant();
-            } catch (ParseException ex) {
+            } catch (final ParseException ex) {
                 LOG.warnf("%s: unreadable pwdChangedTime %s", e.getDN(), changed);
             }
         }
@@ -205,7 +205,7 @@ public class Directory {
     }
 
     /** Checks a user's password by binding as them, asking for the password policy response. */
-    public BindOutcome authenticate(User user, String password) {
+    public BindOutcome authenticate(final User user, final String password) {
         if (password == null || password.isEmpty()) {
             return BindOutcome.INVALID; // an empty password would be an unauthenticated bind
         }
@@ -214,7 +214,7 @@ public class Directory {
             try {
                 r = c.bind(new SimpleBindRequest(user.dn(), password,
                         new DraftBeheraLDAPPasswordPolicy10RequestControl()));
-            } catch (LDAPException e) {
+            } catch (final LDAPException e) {
                 if (policyError(e.toLDAPResult()) == DraftBeheraLDAPPasswordPolicy10ErrorType.PASSWORD_EXPIRED) {
                     return BindOutcome.EXPIRED;
                 }
@@ -227,7 +227,7 @@ public class Directory {
                 return BindOutcome.MUST_CHANGE;
             }
             return BindOutcome.OK;
-        } catch (LDAPException e) {
+        } catch (final LDAPException e) {
             LOG.errorf("Cannot reach the directory to authenticate %s: %s", user.dn(), e.getMessage());
             throw new IllegalStateException("directory unavailable", e);
         }
@@ -238,22 +238,22 @@ public class Directory {
      * the user and sends a password modify request, so the password policy checks
      * the new password and clears pwdReset.
      */
-    public ChangeOutcome changePassword(User user, String oldPassword, String newPassword) {
+    public ChangeOutcome changePassword(final User user, final String oldPassword, final String newPassword) {
         if (oldPassword == null || oldPassword.isEmpty()) {
             return new ChangeOutcome(false, "Invalid username or password.");
         }
         try (LDAPConnection c = connect()) {
             try {
                 c.bind(new SimpleBindRequest(user.dn(), oldPassword));
-            } catch (LDAPException e) {
+            } catch (final LDAPException e) {
                 return new ChangeOutcome(false, "Invalid username or password.");
             }
-            LDAPResult r = c.processExtendedOperation(new PasswordModifyExtendedRequest(null, oldPassword,
+            final LDAPResult r = c.processExtendedOperation(new PasswordModifyExtendedRequest(null, oldPassword,
                     newPassword, new Control[] {new DraftBeheraLDAPPasswordPolicy10RequestControl()}));
             if (r.getResultCode() == ResultCode.SUCCESS) {
                 return new ChangeOutcome(true, null);
             }
-            DraftBeheraLDAPPasswordPolicy10ErrorType err = policyError(r);
+            final DraftBeheraLDAPPasswordPolicy10ErrorType err = policyError(r);
             return new ChangeOutcome(false, err == null ? "The new password was not accepted." : switch (err) {
                 case PASSWORD_TOO_SHORT -> "The new password is too short.";
                 case PASSWORD_IN_HISTORY -> "The new password was used recently; choose another.";
@@ -261,17 +261,18 @@ public class Directory {
                 case PASSWORD_TOO_YOUNG -> "The password was changed too recently.";
                 default -> "The new password was not accepted.";
             });
-        } catch (LDAPException e) {
+        } catch (final LDAPException e) {
             LOG.errorf("Password change for %s failed: %s", user.dn(), e.getMessage());
             return new ChangeOutcome(false, "The password could not be changed.");
         }
     }
 
-    private static DraftBeheraLDAPPasswordPolicy10ErrorType policyError(LDAPResult r) {
+    private static DraftBeheraLDAPPasswordPolicy10ErrorType policyError(final LDAPResult r) {
         try {
-            DraftBeheraLDAPPasswordPolicy10ResponseControl c = DraftBeheraLDAPPasswordPolicy10ResponseControl.get(r);
+            final DraftBeheraLDAPPasswordPolicy10ResponseControl c =
+                    DraftBeheraLDAPPasswordPolicy10ResponseControl.get(r);
             return c == null ? null : c.getErrorType();
-        } catch (LDAPException e) {
+        } catch (final LDAPException e) {
             return null;
         }
     }
@@ -283,30 +284,30 @@ public class Directory {
      * permission under it; a permission grant to that permission. Grants that no
      * longer resolve are ignored (refint normally removes them).
      */
-    public Map<String, List<String>> features(User user) throws LDAPException {
-        Map<String, Set<String>> out = new TreeMap<>();
-        for (String value : user.featureDns()) {
-            DN dn = parse(value);
+    public Map<String, List<String>> features(final User user) throws LDAPException {
+        final Map<String, Set<String>> out = new TreeMap<>();
+        for (final String value : user.featureDns()) {
+            final DN dn = parse(value);
             if (dn == null || !dn.isDescendantOf(features, false)) {
                 continue;
             }
-            SearchResultEntry e = pool.getEntry(dn.toString(), "objectClass", "cn");
+            final SearchResultEntry e = pool.getEntry(dn.toString(), "objectClass", "cn");
             if (e == null) {
                 continue;
             }
             if (e.hasObjectClass("acmeFeature")) {
-                Set<String> perms = out.computeIfAbsent(e.getAttributeValue("cn"), k -> new TreeSet<>());
-                SearchResult children = pool.search(dn.toString(), SearchScope.ONE,
+                final Set<String> perms = out.computeIfAbsent(e.getAttributeValue("cn"), k -> new TreeSet<>());
+                final SearchResult children = pool.search(dn.toString(), SearchScope.ONE,
                         Filter.createEqualityFilter("objectClass", "acmePermission"), "cn");
                 children.getSearchEntries().forEach(p -> perms.add(p.getAttributeValue("cn")));
             } else if (e.hasObjectClass("acmePermission")) {
-                String feature = rdnValue(dn.getParent());
+                final String feature = rdnValue(dn.getParent());
                 if (feature != null) {
                     out.computeIfAbsent(feature, k -> new TreeSet<>()).add(e.getAttributeValue("cn"));
                 }
             }
         }
-        Map<String, List<String>> result = new TreeMap<>();
+        final Map<String, List<String>> result = new TreeMap<>();
         out.forEach((k, v) -> result.put(k, List.copyOf(v)));
         return result;
     }
@@ -316,22 +317,22 @@ public class Directory {
      * Agreements and books are given as paths ("AG0042/AGR-0042-01/BK-000311"),
      * so a resource server can tell whether a requested book falls under a grant.
      */
-    public Accounts accounts(User user) throws LDAPException {
-        Set<String> ag = new TreeSet<>();
-        Set<String> agr = new TreeSet<>();
-        Set<String> bk = new TreeSet<>();
-        Set<String> cl = new TreeSet<>();
-        for (String value : user.accountDns()) {
-            DN dn = parse(value);
+    public Accounts accounts(final User user) throws LDAPException {
+        final Set<String> ag = new TreeSet<>();
+        final Set<String> agr = new TreeSet<>();
+        final Set<String> bk = new TreeSet<>();
+        final Set<String> cl = new TreeSet<>();
+        for (final String value : user.accountDns()) {
+            final DN dn = parse(value);
             if (dn == null) {
                 continue;
             }
-            SearchResultEntry e = pool.getEntry(dn.toString(), "objectClass");
+            final SearchResultEntry e = pool.getEntry(dn.toString(), "objectClass");
             if (e == null) {
                 continue;
             }
             if (dn.isDescendantOf(agencies, false)) {
-                String path = path(dn, agencies);
+                final String path = path(dn, agencies);
                 if (e.hasObjectClass("acmeAgencyAccount")) {
                     ag.add(path);
                 } else if (e.hasObjectClass("acmeAgreementAccount")) {
@@ -347,8 +348,8 @@ public class Directory {
     }
 
     /** cn values from just below {@code top} down to {@code dn}, joined with "/". */
-    private static String path(DN dn, DN top) {
-        StringBuilder sb = new StringBuilder();
+    private static String path(final DN dn, final DN top) {
+        final StringBuilder sb = new StringBuilder();
         for (DN d = dn; d != null && !d.equals(top); d = d.getParent()) {
             sb.insert(0, sb.isEmpty() ? rdnValue(d) : rdnValue(d) + "/");
         }
@@ -357,18 +358,19 @@ public class Directory {
 
     // ---- OAuth clients -----------------------------------------------------
 
-    public Client findClient(String clientId) throws LDAPException {
+    public Client findClient(final String clientId) throws LDAPException {
         if (clientId == null || clientId.isBlank()) {
             return null;
         }
-        String dn = new DN(new RDN("cn", clientId), oauthClients).toString();
-        SearchResultEntry e = pool.getEntry(dn, "objectClass", "cn", "displayName", "acmeRedirectUri", "acmeGrantType");
+        final String dn = new DN(new RDN("cn", clientId), oauthClients).toString();
+        final SearchResultEntry e = pool.getEntry(dn, "objectClass", "cn", "displayName", "acmeRedirectUri",
+                "acmeGrantType");
         if (e == null || !e.hasObjectClass("acmeOAuthClient")) {
             return null;
         }
-        Set<String> grants = new TreeSet<>();
+        final Set<String> grants = new TreeSet<>();
         values(e, "acmeGrantType").forEach(g -> grants.add(g.toLowerCase(Locale.ROOT)));
-        String name = e.getAttributeValue("displayName");
+        final String name = e.getAttributeValue("displayName");
         return new Client(e.getDN(), e.getAttributeValue("cn"), name == null ? clientId : name,
                 hasSecret(dn), Set.copyOf(values(e, "acmeRedirectUri")), Set.copyOf(grants));
     }
@@ -378,20 +380,20 @@ public class Directory {
      * userPassword, only use it in a filter ("search" access, granted for
      * ou=oauth-clients alone in 10-config-db.ldif).
      */
-    private boolean hasSecret(String dn) throws LDAPException {
-        SearchResult r = pool.search(dn, SearchScope.BASE, Filter.createPresenceFilter("userPassword"), "1.1");
+    private boolean hasSecret(final String dn) throws LDAPException {
+        final SearchResult r = pool.search(dn, SearchScope.BASE, Filter.createPresenceFilter("userPassword"), "1.1");
         return r.getEntryCount() == 1;
     }
 
     /** Checks a confidential client's secret by binding as the client entry. */
-    public boolean authenticateClient(Client client, String secret) {
+    public boolean authenticateClient(final Client client, final String secret) {
         if (secret == null || secret.isEmpty()) {
             return false;
         }
         try (LDAPConnection c = connect()) {
             c.bind(client.dn(), secret);
             return true;
-        } catch (LDAPException e) {
+        } catch (final LDAPException e) {
             return false;
         }
     }
@@ -402,32 +404,32 @@ public class Directory {
         return new LDAPConnection(socketFactory, options, url.getHost(), url.getPort());
     }
 
-    private static DN child(String rdn, DN parent) throws LDAPException {
+    private static DN child(final String rdn, final DN parent) throws LDAPException {
         return new DN(new RDN(rdn.substring(0, rdn.indexOf('=')), rdn.substring(rdn.indexOf('=') + 1)), parent);
     }
 
-    private static DN parse(String dn) {
+    private static DN parse(final String dn) {
         try {
             return new DN(dn);
-        } catch (LDAPException e) {
+        } catch (final LDAPException e) {
             return null;
         }
     }
 
-    private static String rdnValue(DN dn) {
+    private static String rdnValue(final DN dn) {
         if (dn == null || dn.getRDN() == null) {
             return null;
         }
-        String[] v = dn.getRDN().getAttributeValues();
+        final String[] v = dn.getRDN().getAttributeValues();
         return v.length == 0 ? null : v[0];
     }
 
-    private static List<String> sorted(List<String> v) {
+    private static List<String> sorted(final List<String> v) {
         return List.copyOf(new TreeSet<>(v));
     }
 
-    private static List<String> values(SearchResultEntry e, String name) {
-        String[] v = e.getAttributeValues(name);
+    private static List<String> values(final SearchResultEntry e, final String name) {
+        final String[] v = e.getAttributeValues(name);
         return v == null ? List.of() : Arrays.asList(v);
     }
 }

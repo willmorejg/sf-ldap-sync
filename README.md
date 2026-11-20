@@ -55,6 +55,7 @@ Further documentation, including sequence diagrams of every flow, is in [docs/](
 │   ├── build.gradle, settings.gradle, gradle.properties, gradlew, Containerfile
 │   └── src/main/
 │       ├── resources/application.properties, templates/   settings, login page
+│       ├── resources/META-INF/openapi.yaml       base OpenAPI document (info, schemas)
 │       └── java/com/acmeinsurance/auth/
 │           ├── ldap/Directory.java   user/client lookup, binds with ppolicy controls, grant resolution
 │           ├── token/                signing keys + JWKS, token building, codes, PKCE
@@ -84,6 +85,23 @@ curl localhost:8080/sync/salesforce             # last report
 
 When a dry-run report looks right, set `DRY_RUN=false` and restart `sync`.
 
+**API documentation (OpenAPI).**
+
+| Service | Spec | Swagger UI |
+|---|---|---|
+| sync | http://localhost:8080/openapi (`/openapi.yaml` for YAML) | http://localhost:8080/q/swagger-ui/ |
+| auth | http://localhost:8081/q/openapi (`?format=json` for JSON) | dev mode only (`./gradlew quarkusDev`) |
+
+- **sync:** Camel generates the spec at runtime from the REST DSL in `routes/salesforce-sync.camel.yaml`
+  (`camel-quarkus-openapi-java`), so it always matches the routes. The operations are always listed; with
+  `SF_ENABLED=false` they answer 503 `{"status": "disabled: ..."}`. The title and description are in that file's `restConfiguration`.
+  `SYNC_API_HOST` sets the server shown in the spec (default `localhost:8080`).
+- **auth:** generated from the annotations in `auth/.../web/`, merged with the base document in
+  `auth/src/main/resources/META-INF/openapi.yaml` (info, client authentication, schemas).
+- Swagger UI is left out of the auth image on purpose: it is the production login service, and OAuth
+  clients find its endpoints through the RFC 8414 metadata anyway.
+- `OPENAPI_ENABLED=false` stops auth serving its spec. The sync spec is always on (loopback only).
+
 **phpLDAPadmin** runs at http://localhost:8090/ (localhost only). Sign in as `cn=admin,dc=acmeinsurance,dc=com` with
 `LDAP_ADMIN_PASSWORD`, or as any other entry (svc-sync, a user), which gets that entry's ACL rights.
 - **Passwords:** set them with the hash type left as `clear`. slapd then hashes them with Argon2 and
@@ -96,7 +114,7 @@ When a dry-run report looks right, set `DRY_RUN=false` and restart `sync`.
 
 Add `-e LDAP_ADMIN_PASSWORD` to the smoke-test `podman exec` to include the OAuth client checks.
 
-`DRY_RUN` covers every write, including the CSV intake. With `SF_ENABLED=false` the Salesforce routes are not created at all (the `/sync/salesforce` endpoint returns 404), so the app runs on CSV files alone.
+`DRY_RUN` covers every write, including the CSV intake. With `SF_ENABLED=false` the Salesforce routes are not created at all (`/sync/salesforce` answers 503 with a `disabled` status), so the app runs on CSV files alone.
 
 ## Salesforce setup
 
@@ -287,7 +305,7 @@ See `10-config-db.ldif` for the exact values.
 ## What has been tested
 
 - **OpenLDAP config:** loaded into a real OpenLDAP 2.6.10.
-- **Smoke test:** `smoke-test.sh` passes 25/25 (2026-11-19, slapd 2.6.10 in the openldap image). It covers:
+- **Smoke test:** `smoke-test.sh` passes 25/25 (last run 2026-11-20, slapd 2.6.10 in the openldap image). It covers:
   - uniqueness
   - the existence constraints on account and feature grants
   - the `acmeUserType` value constraint
@@ -298,7 +316,8 @@ See `10-config-db.ldif` for the exact values.
 - **Token service:** `cd auth && ./gradlew build` runs 16 tests against an in-memory directory. They cover claims for each user type, the password, code+PKCE and refresh grants, client authentication, and the reset/change-password flow (ppolicy is simulated). The service was also run against real slapd 2.6.10 (2026-11-19). It checked the real ppolicy controls (reset forces a change, a too-short new password is rejected), the claims for `sample.agent`, and that a ppolicy lockout blocks both sign-in and refresh.
 - **Paged searches:** with the limits above, paging returns more than 1000 entries.
 - **Build and tests:** `cd sync && ./gradlew build` (Gradle 9.9.1 wrapper, Groovy DSL, needs JDK 25; Gradle can't run on JDK 21 for this build). It runs 45 tests: unit tests for `core/`, plus `PersonWriter`, `SalesforceSyncService` and `CsvIntakeService` integration tests against an in-memory LDAP server loaded with the real schema from `openldap/ldif`. The container build skips tests, because its context is `sync/` only.
-- **App startup:** boots through config validation and route parsing, and stops at Salesforce login when no credentials are set.
+- **App startup:** with `SF_ENABLED=false` the sync container runs on CSV intake alone (the 4 sample people load). With `SF_ENABLED=true` and no credentials it also starts and serves `/sync/salesforce` (a sync run without credentials has not been tried).
+- **OpenAPI (2026-11-20):** sync serves the Camel-generated spec at `/openapi` and Swagger UI shows it, with both operations listed whatever `SF_ENABLED` is. Checked both ways: `SF_ENABLED=true` returns the report, `false` returns 503 JSON. auth serves `/q/openapi`; `OPENAPI_ENABLED=false` turns it off.
 - **To confirm against a real org:**
   - `queryMore` paging takes the `nextRecordsUrl` from the message body.
   - The CDC endpoint syntax `salesforce:subscribe:data/ChangeEvents` is right for the Camel version in use.

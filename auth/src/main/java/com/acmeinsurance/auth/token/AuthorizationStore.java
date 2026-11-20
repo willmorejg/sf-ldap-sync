@@ -36,58 +36,59 @@ public class AuthorizationStore {
     private final Map<String, PendingLogin> logins = new ConcurrentHashMap<>();
     private final Map<String, Code> codes = new ConcurrentHashMap<>();
 
-    public AuthorizationStore(AuthConfig cfg) {
+    public AuthorizationStore(final AuthConfig cfg) {
         this.cfg = cfg;
     }
 
     /** Stores a login request and returns its id, or null if too many are pending. */
-    public String newLogin(String clientId, String redirectUri, String state, String codeChallenge) {
+    public String newLogin(final String clientId, final String redirectUri, final String state,
+                           final String codeChallenge) {
         purge();
         if (logins.size() >= MAX_ENTRIES) {
             return null;
         }
-        String id = token();
+        final String id = token();
         logins.put(id, new PendingLogin(clientId, redirectUri, state, codeChallenge,
                 Instant.now().plus(cfg.tokens().loginTtl())));
         return id;
     }
 
     /** The pending login, if it exists and has not expired (it stays until finished, for retries). */
-    public PendingLogin login(String id) {
-        PendingLogin p = id == null ? null : logins.get(id);
+    public PendingLogin login(final String id) {
+        final PendingLogin p = id == null ? null : logins.get(id);
         return p == null || p.expires().isBefore(Instant.now()) ? null : p;
     }
 
-    public void finishLogin(String id) {
+    public void finishLogin(final String id) {
         logins.remove(id);
     }
 
     /** Issues a one-time authorization code, or null if too many are outstanding. */
-    public String newCode(PendingLogin p, String userId, Instant authTime) {
+    public String newCode(final PendingLogin p, final String userId, final Instant authTime) {
         purge();
         if (codes.size() >= MAX_ENTRIES) {
             return null;
         }
-        String code = token();
+        final String code = token();
         codes.put(code, new Code(p.clientId(), p.redirectUri(), p.codeChallenge(), userId, authTime,
                 Instant.now().plus(cfg.tokens().codeTtl())));
         return code;
     }
 
     /** Removes and returns a code; a code can only ever be taken once. */
-    public Code takeCode(String code) {
-        Code c = code == null ? null : codes.remove(code);
+    public Code takeCode(final String code) {
+        final Code c = code == null ? null : codes.remove(code);
         return c == null || c.expires().isBefore(Instant.now()) ? null : c;
     }
 
     private void purge() {
-        Instant now = Instant.now();
+        final Instant now = Instant.now();
         logins.values().removeIf(p -> p.expires().isBefore(now));
         codes.values().removeIf(c -> c.expires().isBefore(now));
     }
 
     private static String token() {
-        byte[] b = new byte[32];
+        final byte[] b = new byte[32];
         RANDOM.nextBytes(b);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(b);
     }

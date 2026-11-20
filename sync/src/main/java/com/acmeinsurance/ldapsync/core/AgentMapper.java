@@ -35,12 +35,12 @@ public final class AgentMapper {
      *
      * @return 18-character contact ID to 18-character account IDs
      */
-    public static Map<String, Set<String>> indexEntitlements(List<Map<String, Object>> records,
-                                                             String contactField, String accountField) {
-        Map<String, Set<String>> m = new HashMap<>();
-        for (Map<String, Object> r : records) {
-            String contact = Records.path(r, contactField);
-            String account = Records.path(r, accountField);
+    public static Map<String, Set<String>> indexEntitlements(final List<Map<String, Object>> records,
+                                                             final String contactField, final String accountField) {
+        final Map<String, Set<String>> m = new HashMap<>();
+        for (final Map<String, Object> r : records) {
+            final String contact = Records.path(r, contactField);
+            final String account = Records.path(r, accountField);
             if (SalesforceIds.isValid(contact) && SalesforceIds.isValid(account)) {
                 m.computeIfAbsent(SalesforceIds.to18(contact), k -> new LinkedHashSet<>()).add(SalesforceIds.to18(account));
             }
@@ -52,50 +52,51 @@ public final class AgentMapper {
      * @param entitlementsByContact from {@link #indexEntitlements}; may be empty
      * @param accountDnBySfId       directory DN of a synced account, or null if unknown
      */
-    public static Result map(List<Map<String, Object>> users, Map<String, Set<String>> entitlementsByContact,
-                             Mapping m, Function<String, String> accountDnBySfId) {
-        List<PersonSpec> people = new ArrayList<>();
-        List<String> warnings = new ArrayList<>();
+    public static Result map(final List<Map<String, Object>> users,
+                             final Map<String, Set<String>> entitlementsByContact,
+                             final Mapping m, final Function<String, String> accountDnBySfId) {
+        final List<PersonSpec> people = new ArrayList<>();
+        final List<String> warnings = new ArrayList<>();
         int skipped = 0;
-        for (Map<String, Object> r : users) {
-            String rawId = Records.path(r, m.idField());
-            String uid = Records.path(r, m.uidField());
+        for (final Map<String, Object> r : users) {
+            final String rawId = Records.path(r, m.idField());
+            final String uid = Records.path(r, m.uidField());
             if (!SalesforceIds.isValid(rawId) || uid == null) {
                 warnings.add("Skipped user record without a valid ID or " + m.uidField() + ": " + rawId);
                 skipped++;
                 continue;
             }
-            String id = SalesforceIds.to18(rawId);
-            boolean active = Records.bool(r, m.activeField(), true);
+            final String id = SalesforceIds.to18(rawId);
+            final boolean active = Records.bool(r, m.activeField(), true);
 
-            Map<String, List<String>> attrs = new LinkedHashMap<>();
+            final Map<String, List<String>> attrs = new LinkedHashMap<>();
             m.attributes().forEach((ldapAttr, field) -> {
-                String v = Records.path(r, field);
+                final String v = Records.path(r, field);
                 attrs.put(ldapAttr, v == null ? List.of() : List.of(v));
             });
             if (attrs.getOrDefault("sn", List.of()).isEmpty()) {
                 attrs.put("sn", List.of(uid));
             }
             if (attrs.getOrDefault("cn", List.of()).isEmpty()) {
-                String given = first(attrs.get("givenName"));
-                String sn = first(attrs.get("sn"));
+                final String given = first(attrs.get("givenName"));
+                final String sn = first(attrs.get("sn"));
                 attrs.put("cn", List.of(given == null ? sn : given + " " + sn));
             }
 
-            Set<String> accountIds = new LinkedHashSet<>();
+            final Set<String> accountIds = new LinkedHashSet<>();
             if (m.agencyField() != null) {
-                String agency = Records.path(r, m.agencyField());
+                final String agency = Records.path(r, m.agencyField());
                 if (SalesforceIds.isValid(agency)) {
                     accountIds.add(SalesforceIds.to18(agency));
                 }
             }
-            String contact = SalesforceIds.normalize(validOrNull(Records.path(r, m.contactField())));
+            final String contact = SalesforceIds.normalize(validOrNull(Records.path(r, m.contactField())));
             if (contact != null) {
                 accountIds.addAll(entitlementsByContact.getOrDefault(contact, Set.of()));
             }
-            Set<String> dns = new LinkedHashSet<>();
-            for (String accountId : accountIds) {
-                String dn = accountDnBySfId.apply(accountId);
+            final Set<String> dns = new LinkedHashSet<>();
+            for (final String accountId : accountIds) {
+                final String dn = accountDnBySfId.apply(accountId);
                 if (dn == null) {
                     warnings.add(uid + ": account " + accountId + " is not in the directory (not an agency/agreement/book, or rejected)");
                 } else {
@@ -107,11 +108,11 @@ public final class AgentMapper {
         return new Result(people, skipped, warnings);
     }
 
-    private static String first(List<String> values) {
+    private static String first(final List<String> values) {
         return values == null || values.isEmpty() ? null : values.get(0);
     }
 
-    private static String validOrNull(String id) {
+    private static String validOrNull(final String id) {
         return SalesforceIds.isValid(id) ? id : null;
     }
 }

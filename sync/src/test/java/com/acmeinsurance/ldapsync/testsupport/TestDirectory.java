@@ -62,8 +62,8 @@ public final class TestDirectory implements AutoCloseable {
     private final InMemoryDirectoryServer server;
 
     public TestDirectory() throws Exception {
-        Path ldif = ldifDir();
-        InMemoryDirectoryServerConfig config = new InMemoryDirectoryServerConfig(BASE);
+        final Path ldif = ldifDir();
+        final InMemoryDirectoryServerConfig config = new InMemoryDirectoryServerConfig(BASE);
         config.setSchema(Schema.mergeSchemas(
                 Schema.getDefaultStandardSchema(),
                 configSchema(ldif.resolve("01-acmeinsurance-schema.ldif")),
@@ -76,8 +76,8 @@ public final class TestDirectory implements AutoCloseable {
         config.setEnforceSingleStructuralObjectClass(true);
 
         server = new InMemoryDirectoryServer(config);
-        DN policies = new DN("ou=policies," + BASE);
-        for (String file : List.of("20-dit.ldif", "32-sample-features.ldif")) {
+        final DN policies = new DN("ou=policies," + BASE);
+        for (final String file : List.of("20-dit.ldif", "32-sample-features.ldif")) {
             try (LDIFReader r = new LDIFReader(ldif.resolve(file).toFile())) {
                 Entry e;
                 while ((e = r.readEntry()) != null) {
@@ -91,7 +91,7 @@ public final class TestDirectory implements AutoCloseable {
     }
 
     /** A fresh {@link LdapDirectory} (connection pool) talking to this server over LDAP. */
-    public LdapDirectory connect(boolean dryRun) throws Exception {
+    public LdapDirectory connect(final boolean dryRun) throws Exception {
         return new LdapDirectory("ldap://localhost:" + server.getListenPort(), ADMIN_DN, ADMIN_PW, 2, dryRun);
     }
 
@@ -100,11 +100,11 @@ public final class TestDirectory implements AutoCloseable {
     }
 
     /** Reads an entry with every user attribute plus the ppolicy operational ones. */
-    public SearchResultEntry get(String dn) throws LDAPException {
+    public SearchResultEntry get(final String dn) throws LDAPException {
         return server.getEntry(dn, "*", "pwdAccountLockedTime", "pwdPolicySubentry");
     }
 
-    public void add(String... ldifLines) throws Exception {
+    public void add(final String... ldifLines) throws Exception {
         server.add(ldifLines);
     }
 
@@ -113,12 +113,12 @@ public final class TestDirectory implements AutoCloseable {
         server.shutDown(true);
     }
 
-    private static Schema configSchema(Path file) throws Exception {
+    private static Schema configSchema(final Path file) throws Exception {
         try (LDIFReader r = new LDIFReader(file.toFile())) {
-            Entry e = r.readEntry();
-            List<Attribute> attrs = new ArrayList<>();
-            String[] types = e.getAttributeValues("olcAttributeTypes");
-            String[] classes = e.getAttributeValues("olcObjectClasses");
+            final Entry e = r.readEntry();
+            final List<Attribute> attrs = new ArrayList<>();
+            final String[] types = e.getAttributeValues("olcAttributeTypes");
+            final String[] classes = e.getAttributeValues("olcObjectClasses");
             if (types != null) {
                 attrs.add(new Attribute("attributeTypes", types));
             }
@@ -131,7 +131,7 @@ public final class TestDirectory implements AutoCloseable {
 
     /** openldap/ldif, found relative to the sync module (Maven runs tests from there). */
     private static Path ldifDir() {
-        Path dir = Path.of(System.getProperty("user.dir")).resolve("../openldap/ldif").normalize();
+        final Path dir = Path.of(System.getProperty("user.dir")).resolve("../openldap/ldif").normalize();
         if (!Files.isDirectory(dir)) {
             throw new IllegalStateException("Schema LDIFs not found at " + dir
                     + "; run the tests from the sync module of the full project checkout");

@@ -18,7 +18,8 @@ public final class SafetyGuard {
      * @param maxPercent largest share of owned entries one run may remove
      * @return a reason to refuse, or empty when the removal may go ahead
      */
-    public static Optional<String> checkRemoval(int sourceRows, int owned, int toRemove, int maxPercent) {
+    public static Optional<String> checkRemoval(final int sourceRows, final int owned, final int toRemove,
+                                                final int maxPercent) {
         if (toRemove == 0) {
             return Optional.empty();
         }

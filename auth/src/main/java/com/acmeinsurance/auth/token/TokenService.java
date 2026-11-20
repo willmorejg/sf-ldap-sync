@@ -42,7 +42,7 @@ public class TokenService {
     private final Directory directory;
     private final JwtConsumer refreshConsumer;
 
-    public TokenService(AuthConfig cfg, SigningKeys keys, Directory directory) {
+    public TokenService(final AuthConfig cfg, final SigningKeys keys, final Directory directory) {
         this.cfg = cfg;
         this.keys = keys;
         this.directory = directory;
@@ -66,16 +66,16 @@ public class TokenService {
     }
 
     /** Issues an access and refresh token for a user who authenticated at {@code authTime}. */
-    public Map<String, Object> issue(User user, Client client, Instant authTime) {
-        Instant now = Instant.now();
-        Instant refreshExp = min(now.plus(cfg.tokens().refreshTtl()), authTime.plus(cfg.tokens().sessionMax()));
+    public Map<String, Object> issue(final User user, final Client client, final Instant authTime) {
+        final Instant now = Instant.now();
+        final Instant refreshExp = min(now.plus(cfg.tokens().refreshTtl()), authTime.plus(cfg.tokens().sessionMax()));
         if (!refreshExp.isAfter(now)) {
             throw OAuthException.invalidGrant("session expired; sign in again");
         }
         try {
-            String access = sign(accessClaims(user, client, authTime, now), ACCESS_TYPE);
-            String refresh = sign(refreshClaims(user, client, authTime, now, refreshExp), REFRESH_TYPE);
-            Map<String, Object> body = new LinkedHashMap<>();
+            final String access = sign(accessClaims(user, client, authTime, now), ACCESS_TYPE);
+            final String refresh = sign(refreshClaims(user, client, authTime, now, refreshExp), REFRESH_TYPE);
+            final Map<String, Object> body = new LinkedHashMap<>();
             body.put("access_token", access);
             body.put("token_type", "Bearer");
             body.put("expires_in", cfg.tokens().accessTtl().toSeconds());
@@ -84,9 +84,9 @@ public class TokenService {
                 body.put("refresh_expires_in", Duration.between(now, refreshExp).toSeconds());
             }
             return body;
-        } catch (LDAPException e) {
+        } catch (final LDAPException e) {
             throw new IllegalStateException("directory unavailable", e);
-        } catch (JoseException e) {
+        } catch (final JoseException e) {
             throw new IllegalStateException("cannot sign token", e);
         }
     }
@@ -95,23 +95,24 @@ public class TokenService {
      * Refresh tokens go to confidential clients only: a public client (browser or
      * mobile app) uses the authorization code grant alone, and signs in again.
      */
-    public static boolean issuesRefreshTokens(Client client) {
+    public static boolean issuesRefreshTokens(final Client client) {
         return client.confidential() && client.allows("refresh_token");
     }
 
     /** Verifies a refresh token's signature, type, issuer, audience and expiry. */
-    public Refresh verifyRefresh(String token) {
+    public Refresh verifyRefresh(final String token) {
         try {
-            JwtClaims c = refreshConsumer.processToClaims(token);
+            final JwtClaims c = refreshConsumer.processToClaims(token);
             return new Refresh(c.getSubject(), c.getStringClaimValue("client_id"),
                     Instant.ofEpochSecond(c.getClaimValue("auth_time", Long.class)));
-        } catch (InvalidJwtException | MalformedClaimException | RuntimeException e) {
+        } catch (final InvalidJwtException | MalformedClaimException | RuntimeException e) {
             throw OAuthException.invalidGrant("invalid refresh token");
         }
     }
 
-    JwtClaims accessClaims(User user, Client client, Instant authTime, Instant now) throws LDAPException {
-        JwtClaims c = base(user, client, authTime, now, now.plus(cfg.tokens().accessTtl()));
+    JwtClaims accessClaims(final User user, final Client client, final Instant authTime,
+                           final Instant now) throws LDAPException {
+        final JwtClaims c = base(user, client, authTime, now, now.plus(cfg.tokens().accessTtl()));
         c.setAudience(cfg.audience());
         c.setStringClaim("preferred_username", user.uid());
         claim(c, "name", user.name());
@@ -119,7 +120,7 @@ public class TokenService {
         claim(c, "family_name", user.familyName());
         claim(c, "email", user.email());
         claim(c, "user_type", user.userType());
-        String type = user.userType();
+        final String type = user.userType();
         if (type != null && cfg.claims().featuresFor().contains(type)) {
             c.setClaim("features", directory.features(user));
         }
@@ -132,14 +133,16 @@ public class TokenService {
         return c;
     }
 
-    private JwtClaims refreshClaims(User user, Client client, Instant authTime, Instant now, Instant exp) {
-        JwtClaims c = base(user, client, authTime, now, exp);
+    private JwtClaims refreshClaims(final User user, final Client client, final Instant authTime, final Instant now,
+                                    final Instant exp) {
+        final JwtClaims c = base(user, client, authTime, now, exp);
         c.setAudience(cfg.issuer()); // only this service accepts it
         return c;
     }
 
-    private JwtClaims base(User user, Client client, Instant authTime, Instant now, Instant exp) {
-        JwtClaims c = new JwtClaims();
+    private JwtClaims base(final User user, final Client client, final Instant authTime, final Instant now,
+                           final Instant exp) {
+        final JwtClaims c = new JwtClaims();
         c.setIssuer(cfg.issuer());
         c.setSubject(user.id());
         c.setIssuedAt(NumericDate.fromSeconds(now.getEpochSecond()));
@@ -151,8 +154,8 @@ public class TokenService {
         return c;
     }
 
-    private String sign(JwtClaims claims, String type) throws JoseException {
-        JsonWebSignature jws = new JsonWebSignature();
+    private String sign(final JwtClaims claims, final String type) throws JoseException {
+        final JsonWebSignature jws = new JsonWebSignature();
         jws.setPayload(claims.toJson());
         jws.setKey(keys.current().getPrivateKey());
         jws.setKeyIdHeaderValue(keys.current().getKeyId());
@@ -161,13 +164,13 @@ public class TokenService {
         return jws.getCompactSerialization();
     }
 
-    private static void claim(JwtClaims c, String name, String value) {
+    private static void claim(final JwtClaims c, final String name, final String value) {
         if (value != null) {
             c.setStringClaim(name, value);
         }
     }
 
-    private static Instant min(Instant a, Instant b) {
+    private static Instant min(final Instant a, final Instant b) {
         return a.isBefore(b) ? a : b;
     }
 

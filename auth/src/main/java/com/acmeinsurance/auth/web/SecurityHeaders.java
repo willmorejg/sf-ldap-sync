@@ -8,11 +8,11 @@ import jakarta.ws.rs.ext.Provider;
 
 /** Headers for every response: no framing (clickjacking on the login page), no sniffing, no referrer. */
 @Provider
-public class SecurityHeaders implements ContainerResponseFilter {
+public final class SecurityHeaders implements ContainerResponseFilter {
 
     @Override
-    public void filter(ContainerRequestContext req, ContainerResponseContext res) {
-        MultivaluedMap<String, Object> h = res.getHeaders();
+    public void filter(final ContainerRequestContext req, final ContainerResponseContext res) {
+        final MultivaluedMap<String, Object> h = res.getHeaders();
         h.putSingle("X-Frame-Options", "DENY");
         h.putSingle("X-Content-Type-Options", "nosniff");
         h.putSingle("Referrer-Policy", "no-referrer");

@@ -3,7 +3,12 @@
 How Salesforce Accounts and Users reach the directory. All of the logic is in
 `SalesforceSyncService` (`sync/src/main/java/com/acmeinsurance/ldapsync/salesforce/`).
 The Camel routes in `sync/src/main/resources/routes/salesforce-sync.camel.yaml`
-only decide when it runs. With `SF_ENABLED=false`, none of these routes is created.
+only decide when it runs. With `SF_ENABLED=false`, none of these routes is created, and
+`/sync/salesforce` answers 503 with a `disabled` status.
+
+The HTTP trigger is a Camel REST DSL endpoint, which forwards to a `direct:` route.
+Camel generates its OpenAPI document from that definition and serves it at
+`http://localhost:8080/openapi`, with Swagger UI at `http://localhost:8080/q/swagger-ui/`.
 
 ## Triggers
 
@@ -23,9 +28,9 @@ sequenceDiagram
 
     Q->>S: fullSync()
     T->>S: fullSync() (once, if run-on-startup)
-    Op->>S: POST /sync/salesforce → fullSync()
+    Op->>S: POST /sync/salesforce (REST DSL → direct:salesforce-sync-now) → fullSync()
     S-->>Op: SyncReport (JSON)
-    Op->>S: GET /sync/salesforce → lastReport()
+    Op->>S: GET /sync/salesforce (→ direct:salesforce-sync-last) → lastReport()
     S-->>Op: last SyncReport
 
     opt sync.cdc.enabled=true

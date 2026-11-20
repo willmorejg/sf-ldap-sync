@@ -34,7 +34,7 @@ import com.unboundid.util.ssl.SSLUtil;
  * {@link #add}, {@link #modify}, {@link #modifyDn} or {@link #delete}, so dry-run
  * mode only has to be handled here.
  */
-public class LdapDirectory implements AutoCloseable {
+public final class LdapDirectory implements AutoCloseable {
 
     private static final Logger LOG = Logger.getLogger(LdapDirectory.class);
     private static final int PAGE_SIZE = 500;
@@ -42,17 +42,18 @@ public class LdapDirectory implements AutoCloseable {
     private final LDAPConnectionPool pool;
     private final boolean dryRun;
 
-    public LdapDirectory(String url, String bindDn, String bindPassword, int poolSize, boolean dryRun)
+    public LdapDirectory(final String url, final String bindDn, final String bindPassword, final int poolSize,
+                         final boolean dryRun)
             throws LDAPException, GeneralSecurityException {
-        LDAPURL u = new LDAPURL(url);
-        LDAPConnectionOptions options = new LDAPConnectionOptions();
+        final LDAPURL u = new LDAPURL(url);
+        final LDAPConnectionOptions options = new LDAPConnectionOptions();
         options.setConnectTimeoutMillis(10_000);
         options.setResponseTimeoutMillis(60_000);
         options.setSSLSocketVerifier(new HostNameSSLSocketVerifier(true));
-        SocketFactory sf = "ldaps".equalsIgnoreCase(u.getScheme())
+        final SocketFactory sf = "ldaps".equalsIgnoreCase(u.getScheme())
                 ? new SSLUtil(JVMDefaultTrustManager.getInstance()).createSSLSocketFactory()
                 : SocketFactory.getDefault();
-        LDAPConnection first = new LDAPConnection(sf, options, u.getHost(), u.getPort(), bindDn, bindPassword);
+        final LDAPConnection first = new LDAPConnection(sf, options, u.getHost(), u.getPort(), bindDn, bindPassword);
         this.pool = new LDAPConnectionPool(first, 1, Math.max(1, poolSize));
         this.pool.setRetryFailedOperationsDueToInvalidConnections(true);
         this.dryRun = dryRun;
@@ -68,12 +69,13 @@ public class LdapDirectory implements AutoCloseable {
     // ---- reads -------------------------------------------------------------
 
     /** Returns the entry at {@code dn}, or null if it does not exist. */
-    public SearchResultEntry get(String dn, String... attributes) throws LDAPException {
+    public SearchResultEntry get(final String dn, final String... attributes) throws LDAPException {
         return pool.getEntry(dn, attributes);
     }
 
     /** Returns at most one entry; throws if the search matches more than one. */
-    public SearchResultEntry findOne(String baseDn, SearchScope scope, Filter filter, String... attributes)
+    public SearchResultEntry findOne(final String baseDn, final SearchScope scope, final Filter filter,
+                                     final String... attributes)
             throws LDAPException {
         return pool.searchForEntry(baseDn, scope, filter, attributes);
     }
@@ -83,19 +85,20 @@ public class LdapDirectory implements AutoCloseable {
      * OpenLDAP ties the paging cookie to one connection, so all pages are read on
      * the same pooled connection.
      */
-    public List<SearchResultEntry> searchAll(String baseDn, SearchScope scope, Filter filter, String... attributes)
+    public List<SearchResultEntry> searchAll(final String baseDn, final SearchScope scope, final Filter filter,
+                                             final String... attributes)
             throws LDAPException {
-        List<SearchResultEntry> out = new ArrayList<>();
-        LDAPConnection conn = pool.getConnection();
+        final List<SearchResultEntry> out = new ArrayList<>();
+        final LDAPConnection conn = pool.getConnection();
         boolean healthy = false;
         try {
             ASN1OctetString cookie = null;
             do {
-                SearchRequest req = new SearchRequest(baseDn, scope, filter, attributes);
+                final SearchRequest req = new SearchRequest(baseDn, scope, filter, attributes);
                 req.addControl(new SimplePagedResultsControl(PAGE_SIZE, cookie));
-                SearchResult res = conn.search(req);
+                final SearchResult res = conn.search(req);
                 out.addAll(res.getSearchEntries());
-                SimplePagedResultsControl page = SimplePagedResultsControl.get(res);
+                final SimplePagedResultsControl page = SimplePagedResultsControl.get(res);
                 cookie = page != null && page.moreResultsToReturn() ? page.getCookie() : null;
             } while (cookie != null);
             healthy = true;
@@ -111,7 +114,7 @@ public class LdapDirectory implements AutoCloseable {
 
     // ---- writes ------------------------------------------------------------
 
-    public void add(Entry entry) throws LDAPException {
+    public void add(final Entry entry) throws LDAPException {
         if (dryRun) {
             LOG.infof("[dry-run] add %s%n%s", entry.getDN(), entry.toLDIFString());
             return;
@@ -119,7 +122,7 @@ public class LdapDirectory implements AutoCloseable {
         pool.add(entry);
     }
 
-    public void modify(String dn, List<Modification> mods) throws LDAPException {
+    public void modify(final String dn, final List<Modification> mods) throws LDAPException {
         if (mods.isEmpty()) {
             return;
         }
@@ -131,7 +134,7 @@ public class LdapDirectory implements AutoCloseable {
     }
 
     /** Renames and/or moves an entry (and its subtree). newSuperiorDn may be null. */
-    public void modifyDn(String dn, String newRdn, String newSuperiorDn) throws LDAPException {
+    public void modifyDn(final String dn, final String newRdn, final String newSuperiorDn) throws LDAPException {
         if (dryRun) {
             LOG.infof("[dry-run] modrdn %s -> %s under %s", dn, newRdn, newSuperiorDn);
             return;
@@ -139,7 +142,7 @@ public class LdapDirectory implements AutoCloseable {
         pool.modifyDN(dn, newRdn, true, newSuperiorDn);
     }
 
-    public void delete(String dn) throws LDAPException {
+    public void delete(final String dn) throws LDAPException {
         if (dryRun) {
             LOG.infof("[dry-run] delete %s", dn);
             return;
@@ -150,37 +153,37 @@ public class LdapDirectory implements AutoCloseable {
     // ---- helpers -----------------------------------------------------------
 
     /** True when {@code dn} is strictly below {@code baseDn}. Invalid DNs are never in scope. */
-    public static boolean isUnder(String dn, String baseDn) {
+    public static boolean isUnder(final String dn, final String baseDn) {
         try {
             return new DN(dn).isDescendantOf(new DN(baseDn), false);
-        } catch (LDAPException e) {
+        } catch (final LDAPException e) {
             return false;
         }
     }
 
     /** Normalized form for comparing DNs; falls back to lower case for invalid input. */
-    public static String normalize(String dn) {
+    public static String normalize(final String dn) {
         try {
             return new DN(dn).toNormalizedString();
-        } catch (LDAPException e) {
+        } catch (final LDAPException e) {
             return dn.toLowerCase(Locale.ROOT);
         }
     }
 
-    public static boolean sameDn(String a, String b) {
+    public static boolean sameDn(final String a, final String b) {
         return normalize(a).equals(normalize(b));
     }
 
     /** Number of RDNs; used to delete children before parents. */
-    public static int depth(String dn) {
+    public static int depth(final String dn) {
         try {
             return new DN(dn).getRDNs().length;
-        } catch (LDAPException e) {
+        } catch (final LDAPException e) {
             return 0;
         }
     }
 
-    public static boolean isResult(LDAPException e, ResultCode code) {
+    public static boolean isResult(final LDAPException e, final ResultCode code) {
         return e.getResultCode() == code;
     }
 

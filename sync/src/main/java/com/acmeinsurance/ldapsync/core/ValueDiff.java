@@ -33,17 +33,18 @@ public final class ValueDiff {
      * @param prune      remove in-scope values the source no longer lists
      * @param normalizer comparison key (e.g. DN normalization or lower-casing)
      */
-    public static Diff diff(Collection<String> existing, Collection<String> desired,
-                            Predicate<String> inScope, boolean prune, Function<String, String> normalizer) {
-        Map<String, String> have = index(existing, normalizer);
-        Map<String, String> want = index(desired, normalizer);
-        List<String> add = new ArrayList<>();
+    public static Diff diff(final Collection<String> existing, final Collection<String> desired,
+                            final Predicate<String> inScope, final boolean prune,
+                            final Function<String, String> normalizer) {
+        final Map<String, String> have = index(existing, normalizer);
+        final Map<String, String> want = index(desired, normalizer);
+        final List<String> add = new ArrayList<>();
         want.forEach((key, value) -> {
             if (!have.containsKey(key)) {
                 add.add(value);
             }
         });
-        List<String> remove = new ArrayList<>();
+        final List<String> remove = new ArrayList<>();
         if (prune) {
             have.forEach((key, value) -> {
                 if (!want.containsKey(key) && inScope.test(value)) {
@@ -54,10 +55,11 @@ public final class ValueDiff {
         return new Diff(add, remove);
     }
 
-    private static Map<String, String> index(Collection<String> values, Function<String, String> normalizer) {
-        Map<String, String> m = new LinkedHashMap<>();
+    private static Map<String, String> index(final Collection<String> values,
+                                             final Function<String, String> normalizer) {
+        final Map<String, String> m = new LinkedHashMap<>();
         if (values != null) {
-            for (String v : values) {
+            for (final String v : values) {
                 m.putIfAbsent(normalizer.apply(v), v);
             }
         }

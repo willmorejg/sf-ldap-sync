@@ -68,6 +68,7 @@ services:
       # Public base URL of the token service: the "iss" of every token.
       AUTH_ISSUER: ${AUTH_ISSUER:-http://localhost:8081}
       AUTH_AUDIENCE: ${AUTH_AUDIENCE:-acmeinsurance}
+      OPENAPI_ENABLED: ${OPENAPI_ENABLED:-true}
     ports:
       - "127.0.0.1:8081:8081"
     volumes:

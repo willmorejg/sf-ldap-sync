@@ -27,12 +27,13 @@ The schema follows the earlier design: `acmeUser`, `acmeAccountAccess` (holding
 ## Status
 | Part | State |
 |---|---|
-| `openldap/` (config LDIFs, entrypoint, Containerfile) | Loaded and exercised against a real slapd 2.6.10; `openldap/smoke-test.sh` passes 16/16 (2026-11-19) |
+| `openldap/` (config LDIFs, entrypoint, Containerfile) | Loaded and exercised against a real slapd 2.6.10; `openldap/smoke-test.sh` passes 25/25 (rerun 2026-11-20 on the Acme fresh load) |
 | `sync/src/main/java/.../core/` (pure logic) | Compiles cleanly with `-Xlint:all`; 11 unit tests pass |
-| `sync/.../ldap`, `salesforce`, `csv`, `SyncConfig`, Gradle build, routes | Compiles on Java 25 / Quarkus 3.40.1 LTS (Camel 4.22). 45 tests pass, including the in-memory LDAP integration tests (CSV intake per user type since 2026-11-20). Starts without Salesforce credentials; with `SF_ENABLED=false` only CSV intake runs |
-| `auth/` (token service) | 16 tests pass (in-memory LDAP, ppolicy simulated by an interceptor; claims per user type). Run end to end against real slapd 2.6.10 on 2026-11-19: reset forces a password change on the login page, claims correct, lockout blocks sign-in and refresh. Image builds |
+| `sync/.../ldap`, `salesforce`, `csv`, `SyncConfig`, Gradle build, routes | Compiles on Java 25 / Quarkus 3.40.1 LTS (Camel 4.22). 45 tests pass, including the in-memory LDAP integration tests (CSV intake per user type since 2026-11-20). Starts without Salesforce credentials; with `SF_ENABLED=false` only CSV intake runs. OpenAPI from the Camel REST DSL at `/openapi`, Swagger UI at `/q/swagger-ui` (2026-11-20) |
+| `auth/` (token service) | 16 tests pass (in-memory LDAP, ppolicy simulated by an interceptor; claims per user type). Run end to end against real slapd 2.6.10 on 2026-11-19: reset forces a password change on the login page, claims correct, lockout blocks sign-in and refresh. Image builds. OpenAPI at `/q/openapi` from annotations (2026-11-20) |
 | phpLDAPadmin (in the openldap image) | 1.2.6.7 from Ubuntu, on nginx + php8.3-fpm, port 8090 on the host. Checked 2026-11-20: admin login, entry/feature/client views, schema list, tree |
-| Container images and compose | Built and running under podman-compose 1.5 (2026-11-19): openldap healthy, smoke test 16/16 against it, CSV samples loaded (4 people). Salesforce not yet exercised |
+| Container images and compose | Built and running under podman-compose 1.5. Fresh load with the Acme names on 2026-11-20: openldap healthy, smoke test 25/25, CSV samples loaded (4 people), auth and sync up. Salesforce not yet exercised |
+| Documentation | `docs/`: index, schema requirements, Mermaid sequence diagrams (2026-11-20); all diagrams render with Mermaid 11 |
 
 ## Do first
 1. ~~Compile and run core tests~~ Done (2026-11-19): builds with JDK 25, 11 tests pass.
@@ -70,9 +71,9 @@ The schema follows the earlier design: `acmeUser`, `acmeAccountAccess` (holding
    - CLIENT_CREDENTIALS login through `SalesforceComponentProducer` (setter names
      are now compile-checked; the login itself is untested)
 
-5. The running compose volumes were built before the auth schema existed. Recreate
-   them (`podman-compose down -v`, then reload the CSV samples) or apply the add-on by hand
-   (README, "Applying the sync add-on"), then `podman-compose up --build -d` starts `auth`.
+5. ~~Recreate the compose volumes for the auth schema~~ Done (2026-11-20): the volumes were
+   recreated for the Acme rename, so they include the auth schema and svc-sync. An existing server
+   still takes the add-on by hand (README, "Applying the sync add-on").
 
 ## Assumptions about the Salesforce org (all in application.properties)
 - Record types are named Agency/Agreement/Book and linked by ParentId.
@@ -111,7 +112,8 @@ The schema follows the earlier design: `acmeUser`, `acmeAccountAccess` (holding
   `acmeFeatureAccess` class to agents. The CSV feeds own the feature grants of entries they own.
 - The provisioning account is `cn=svc-sync` (env `SVC_SYNC_PASSWORD`), renamed from svc-idm on
   2026-11-20 to match `docs/LDAP_Schema_Definition.md`. Older servers are migrated with
-  `openldap/migrations/2026-11-20-rename-svc-idm-to-svc-sync.sh`; the running compose volumes already were.
+  `openldap/migrations/2026-11-20-rename-svc-idm-to-svc-sync.sh`. The script names `dc=acmeinsurance,dc=com`, so it fits only
+  a server already on the Acme base; the compose volumes were created with svc-sync and need no migration.
 - `docs/LDAP_Schema_Definition.md` is the requirements document for user types. In short:
   - Token claims by user type: `features` and `accounts` for agent, internal and other; `policies` for
     member and other.
@@ -133,7 +135,34 @@ All documentation except README.md (and this file, which Claude Code expects at 
 `docs/index.md`. When a flow changes (routes, `SalesforceSyncService`, `CsvIntakeService`,
 `PersonWriter`, `AuthorizeResource`, `TokenResource`, `entrypoint.sh`), update its diagram too.
 
+## OpenAPI
+- sync: the HTTP endpoints are Camel REST DSL in `routes/salesforce-sync.camel.yaml`. The REST block is
+  always on, so the spec always lists both operations; never set `disabled:` on it (Camel then drops the
+  operations from the spec). Each verb forwards to a `direct:` endpoint served by one of two routes,
+  picked by precondition: the real one (`{{sync.salesforce.enabled}}`) or a `-disabled` one
+  (`{{!sync.salesforce.enabled}}`) that answers 503 JSON. That needs `camel-quarkus-direct` and
+  `camel.rest.inline-routes=false`: with inlining (the Camel 4 default) the verbs inherit the wrong
+  precondition and 404 when Salesforce is enabled. `camel-quarkus-openapi-java` builds the spec at runtime and
+  Camel serves it at `/openapi` (`camel.rest.api-context-path`); the extension registers it with Swagger UI
+  (`/q/swagger-ui`, `always-include=true`). `quarkus.smallrye-openapi.enable=false`: Quarkus's own
+  `/q/openapi` would be empty, because `quarkus.camel.openapi.expose.enabled` only reads Java
+  `RouteBuilder` classes, not YAML DSL. Info lives in the YAML `restConfiguration` (the
+  `camel.rest.api-property[...]` property syntax fails to bind). `camel.rest.api-host` stops the spec
+  advertising 0.0.0.0. No runtime off-switch; the port is loopback-only.
+- auth: `quarkus-smallrye-openapi`, spec at `/q/openapi`, switch `OPENAPI_ENABLED`. Spec generated from MicroProfile OpenAPI annotations on `web/*Resource`, merged with the base
+  `auth/src/main/resources/META-INF/openapi.yaml`, which holds info, the `clientBasic` scheme and the
+  form/response schemas referenced by `@Schema(ref = ...)`. Swagger UI stays dev/test only.
+- podman-compose `up --build` rebuilds images but keeps running containers: `podman rm -f` the
+  service's container, then `podman-compose up -d`.
+
 ## Conventions
 Java 25, Gradle (Groovy DSL, wrapper), Camel Quarkus with YAML DSL routes (logic lives in CDI beans, and the
 routes only trigger it), rootless Podman, OpenLDAP config via cn=config LDIF. `auth/` is a separate Gradle build with its own
 wrapper (same JDK 25 setup as `sync/`); its tests also read `../openldap/ldif`.
+
+`final` everywhere the compiler allows it: local, catch and for-each variables, method and constructor
+parameters (not lambda or pattern variables, not record components), private fields set once, and classes
+nothing extends. Exceptions: CDI normal-scoped beans (`@ApplicationScoped`) stay non-final because Quarkus
+proxies them, and `@QuarkusTest` classes stay non-final. Beans use constructor injection (a single constructor,
+no `@Inject`, as in `auth/`) so their dependencies are `private final`; don't add `@Inject` fields.
+`@Singleton`/`@Provider`/JAX-RS resource classes may be final. Keep new lines within 120 characters (22 older lines, mostly in tests, are longer).

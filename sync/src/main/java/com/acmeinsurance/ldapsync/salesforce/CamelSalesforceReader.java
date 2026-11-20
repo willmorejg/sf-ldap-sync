@@ -12,7 +12,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 
 /**
  * Queries Salesforce through camel-salesforce, which handles OAuth and token
@@ -26,25 +25,27 @@ public class CamelSalesforceReader implements SalesforceReader {
     private static final TypeReference<Map<String, Object>> MAP = new TypeReference<>() {
     };
 
-    @Inject
-    ProducerTemplate template;
+    private final ProducerTemplate template;
+    private final ObjectMapper mapper;
 
-    @Inject
-    ObjectMapper mapper;
+    public CamelSalesforceReader(final ProducerTemplate template, final ObjectMapper mapper) {
+        this.template = template;
+        this.mapper = mapper;
+    }
 
     @Override
-    public List<Map<String, Object>> query(String soql) throws Exception {
-        List<Map<String, Object>> records = new ArrayList<>();
+    public List<Map<String, Object>> query(final String soql) throws Exception {
+        final List<Map<String, Object>> records = new ArrayList<>();
         // The SOQL (and, for queryMore, the nextRecordsUrl) is read from the body
         // when no sObjectQuery header or option is set.
         String json = template.requestBody("salesforce:query?rawPayload=true", soql, String.class);
         int pages = 1;
         while (true) {
-            JsonNode root = mapper.readTree(json);
-            for (JsonNode rec : root.path("records")) {
+            final JsonNode root = mapper.readTree(json);
+            for (final JsonNode rec : root.path("records")) {
                 records.add(mapper.convertValue(rec, MAP));
             }
-            String next = root.path("nextRecordsUrl").asText("");
+            final String next = root.path("nextRecordsUrl").asText("");
             if (root.path("done").asBoolean(true) || next.isEmpty()) {
                 break;
             }

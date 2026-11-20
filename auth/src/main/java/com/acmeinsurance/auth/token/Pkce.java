@@ -15,20 +15,21 @@ public final class Pkce {
     private Pkce() {
     }
 
-    public static boolean wellFormed(String value) {
+    public static boolean wellFormed(final String value) {
         return value != null && SHAPE.matcher(value).matches();
     }
 
-    public static String challenge(String verifier) {
+    public static String challenge(final String verifier) {
         try {
-            byte[] hash = MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII));
+            final byte[] hash =
+                    MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII));
             return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
-        } catch (NoSuchAlgorithmException e) {
+        } catch (final NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
     }
 
-    public static boolean matches(String verifier, String challenge) {
+    public static boolean matches(final String verifier, final String challenge) {
         if (!wellFormed(verifier) || challenge == null) {
             return false;
         }

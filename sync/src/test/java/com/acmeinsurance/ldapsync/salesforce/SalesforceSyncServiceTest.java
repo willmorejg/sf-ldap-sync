@@ -41,7 +41,7 @@ import io.smallrye.config.SmallRyeConfigBuilder;
  * under AG2, book BK1 under AGR1. Agent ada works for AG1 and has an extra grant
  * to BK1 (AccountContactRelation); agent bob works for AG2.
  */
-class SalesforceSyncServiceTest {
+final class SalesforceSyncServiceTest {
 
     private static final String AG1 = id("001", 1);
     private static final String AG2 = id("001", 2);
@@ -107,20 +107,20 @@ class SalesforceSyncServiceTest {
 
     @Test
     void buildsTheAccountTreeAndAgents() throws Exception {
-        Map<String, Object> report = sync();
+        final Map<String, Object> report = sync();
 
         assertNoErrors(report);
-        for (String dn : List.of(AG1_DN, AG2_DN, AGR1_DN, AGR2_DN, BK1_DN)) {
+        for (final String dn : List.of(AG1_DN, AG2_DN, AGR1_DN, AGR2_DN, BK1_DN)) {
             assertNotNull(ldap.get(dn), dn);
         }
-        SearchResultEntry book = ldap.get(BK1_DN);
+        final SearchResultEntry book = ldap.get(BK1_DN);
         assertTrue(book.hasObjectClass("acmeBookAccount"));
         assertTrue(book.hasObjectClass("acmeSyncManaged"));
         assertEquals(BK1, book.getAttributeValue("acmeSalesforceId"));
         assertEquals("salesforce", book.getAttributeValue("acmeSource"));
         assertEquals("Book one", book.getAttributeValue("displayName"));
 
-        SearchResultEntry ada = ldap.get(ADA_DN);
+        final SearchResultEntry ada = ldap.get(ADA_DN);
         assertNotNull(ada);
         assertEquals(ADA, ada.getAttributeValue("acmeSalesforceId"));
         assertEquals("Ada Lovelace", ada.getAttributeValue("cn"));
@@ -133,7 +133,7 @@ class SalesforceSyncServiceTest {
     @Test
     void secondRunChangesNothing() throws Exception {
         sync();
-        Map<String, Object> report = sync();
+        final Map<String, Object> report = sync();
 
         assertNoErrors(report);
         assertEquals(5, count(report, "accounts.unchanged"));
@@ -146,10 +146,10 @@ class SalesforceSyncServiceTest {
     void movesABookToItsNewAgreementAndUpdatesGrants() throws Exception {
         sync();
         sf.account(BK1, "BK1", "Book", AGR2, "Book one");
-        Map<String, Object> report = sync();
+        final Map<String, Object> report = sync();
 
         assertNoErrors(report);
-        String moved = "cn=BK1," + AGR2_DN;
+        final String moved = "cn=BK1," + AGR2_DN;
         assertNull(ldap.get(BK1_DN));
         assertEquals(BK1, ldap.get(moved).getAttributeValue("acmeSalesforceId"));
         assertEquals(1, count(report, "accounts.moved"));
@@ -160,11 +160,11 @@ class SalesforceSyncServiceTest {
     void renamingAnAgencyMovesItsSubtree() throws Exception {
         sync();
         sf.account(AG1, "AG1X", "Agency", null, "First Agency");
-        Map<String, Object> report = sync();
+        final Map<String, Object> report = sync();
 
         assertNoErrors(report);
-        String agency = "cn=AG1X," + AGENCIES;
-        String book = "cn=BK1,cn=AGR1," + agency;
+        final String agency = "cn=AG1X," + AGENCIES;
+        final String book = "cn=BK1,cn=AGR1," + agency;
         assertNull(ldap.get(AG1_DN));
         assertNotNull(ldap.get(book));
         assertEquals(1, count(report, "accounts.renamed"));
@@ -176,7 +176,7 @@ class SalesforceSyncServiceTest {
         sync();
         sf.remove(AGR1);
         sf.remove(BK1);
-        Map<String, Object> report = sync();
+        final Map<String, Object> report = sync();
 
         assertNoErrors(report);
         assertNull(ldap.get(AGR1_DN));
@@ -188,13 +188,13 @@ class SalesforceSyncServiceTest {
 
     @Test
     void neverTouchesClientGrants() throws Exception {
-        String client = "cn=CL0001," + CLIENTS;
+        final String client = "cn=CL0001," + CLIENTS;
         ldap.add("dn: " + client, "objectClass: acmeClientAccount", "cn: CL0001");
         sync();
         ldap.server().modify("dn: " + ADA_DN, "changetype: modify", "add: acmeAccountDN",
                 "acmeAccountDN: " + client, "acmeAccountDN: " + AG2_DN);
 
-        Map<String, Object> report = sync();
+        final Map<String, Object> report = sync();
 
         assertNoErrors(report);
         // The hand-added agency grant is pruned, the client grant stays.
@@ -205,7 +205,7 @@ class SalesforceSyncServiceTest {
     void neverTouchesFeatureGrants() throws Exception {
         sync();
         assertTrue(ldap.get(ADA_DN).hasObjectClass("acmeFeatureAccess"));
-        String perm = "cn=read-quotes,cn=quoting," + FEATURES;
+        final String perm = "cn=read-quotes,cn=quoting," + FEATURES;
         ldap.server().modify("dn: " + ADA_DN, "changetype: modify", "add: acmeFeatureDN", "acmeFeatureDN: " + perm);
 
         assertNoErrors(sync());
@@ -221,7 +221,7 @@ class SalesforceSyncServiceTest {
         Map<String, Object> report = sync();
 
         assertNoErrors(report);
-        SearchResultEntry bob = ldap.get(BOB_DN);
+        final SearchResultEntry bob = ldap.get(BOB_DN);
         assertNotNull(bob);
         assertEquals(PersonWriter.PERMANENT_LOCK, bob.getAttributeValue("pwdAccountLockedTime"));
         assertTrue(bob.hasAttribute("acmeDeactivated"));
@@ -239,7 +239,7 @@ class SalesforceSyncServiceTest {
     void anEmptySourceRemovesNothing() throws Exception {
         sync();
         sf.clear();
-        Map<String, Object> report = sync();
+        final Map<String, Object> report = sync();
 
         assertTrue(errors(report).stream().anyMatch(e -> e.startsWith("accounts not removed")), errors(report).toString());
         assertTrue(errors(report).stream().anyMatch(e -> e.startsWith("agents not deactivated")), errors(report).toString());
@@ -252,7 +252,7 @@ class SalesforceSyncServiceTest {
         props.put("sync.safety.max-remove-percent", "10");
         sync();
         sf.remove(BK1);
-        Map<String, Object> report = sync();
+        final Map<String, Object> report = sync();
 
         assertTrue(errors(report).stream().anyMatch(e -> e.contains("above the 10% limit")), errors(report).toString());
         assertNotNull(ldap.get(BK1_DN));
@@ -261,10 +261,10 @@ class SalesforceSyncServiceTest {
     @Test
     void leavesAHandMadeAccountAloneAndSkipsItsChildren() throws Exception {
         ldap.add("dn: " + AG1_DN, "objectClass: acmeAgencyAccount", "cn: AG1");
-        Map<String, Object> report = sync();
+        final Map<String, Object> report = sync();
 
         assertTrue(errors(report).stream().anyMatch(e -> e.contains("created by hand")), errors(report).toString());
-        SearchResultEntry agency = ldap.get(AG1_DN);
+        final SearchResultEntry agency = ldap.get(AG1_DN);
         assertNull(agency.getAttributeValue("acmeSource"));
         assertNull(ldap.get(AGR1_DN));
         assertNull(ldap.get(BK1_DN));
@@ -275,10 +275,10 @@ class SalesforceSyncServiceTest {
     void adoptsAHandMadeAccountWhenAllowed() throws Exception {
         ldap.add("dn: " + AG1_DN, "objectClass: acmeAgencyAccount", "cn: AG1");
         props.put("sync.safety.adopt-unowned", "true");
-        Map<String, Object> report = sync();
+        final Map<String, Object> report = sync();
 
         assertNoErrors(report);
-        SearchResultEntry agency = ldap.get(AG1_DN);
+        final SearchResultEntry agency = ldap.get(AG1_DN);
         assertEquals("salesforce", agency.getAttributeValue("acmeSource"));
         assertEquals(AG1, agency.getAttributeValue("acmeSalesforceId"));
         assertTrue(agency.hasObjectClass("acmeSyncManaged"));
@@ -290,7 +290,7 @@ class SalesforceSyncServiceTest {
     void dryRunWritesNothing() throws Exception {
         props.put("sync.safety.dry-run", "true");
         try (LdapDirectory dry = ldap.connect(true)) {
-            Map<String, Object> report = service(dry).fullSync();
+            final Map<String, Object> report = service(dry).fullSync();
             assertNoErrors(report);
             assertEquals(5, count(report, "accounts.created"));
         }
@@ -304,47 +304,43 @@ class SalesforceSyncServiceTest {
         return service(dir).fullSync();
     }
 
-    private SalesforceSyncService service(LdapDirectory directory) {
-        SmallRyeConfig config = new SmallRyeConfigBuilder()
+    private SalesforceSyncService service(final LdapDirectory directory) {
+        final SmallRyeConfig config = new SmallRyeConfigBuilder()
                 .withMapping(SyncConfig.class)
                 .withSources(new PropertiesConfigSource(props, "test", 500))
                 .build();
-        SalesforceSyncService s = new SalesforceSyncService();
-        s.cfg = config.getConfigMapping(SyncConfig.class);
-        s.salesforce = sf;
-        s.directory = () -> directory;
-        return s;
+        return new SalesforceSyncService(config.getConfigMapping(SyncConfig.class), sf, () -> directory);
     }
 
-    private static String id(String prefix, int n) {
+    private static String id(final String prefix, final int n) {
         return SalesforceIds.to18(prefix + String.format("%012d", n));
     }
 
-    private Set<String> grants(String dn) throws Exception {
-        SearchResultEntry e = ldap.get(dn);
-        String[] values = e.getAttributeValues("acmeAccountDN");
+    private Set<String> grants(final String dn) throws Exception {
+        final SearchResultEntry e = ldap.get(dn);
+        final String[] values = e.getAttributeValues("acmeAccountDN");
         return values == null ? Set.of() : dns(values);
     }
 
-    private static Set<String> dns(String... dns) {
-        Set<String> out = new TreeSet<>();
-        for (String dn : dns) {
+    private static Set<String> dns(final String... dns) {
+        final Set<String> out = new TreeSet<>();
+        for (final String dn : dns) {
             out.add(LdapDirectory.normalize(dn));
         }
         return out;
     }
 
     @SuppressWarnings("unchecked")
-    private static int count(Map<String, Object> report, String key) {
+    private static int count(final Map<String, Object> report, final String key) {
         return ((Map<String, Integer>) report.get("counts")).getOrDefault(key, 0);
     }
 
     @SuppressWarnings("unchecked")
-    private static List<String> errors(Map<String, Object> report) {
+    private static List<String> errors(final Map<String, Object> report) {
         return (List<String>) report.get("errors");
     }
 
-    private static void assertNoErrors(Map<String, Object> report) {
+    private static void assertNoErrors(final Map<String, Object> report) {
         assertTrue(errors(report).isEmpty(), () -> "unexpected errors: " + errors(report));
     }
 
@@ -355,8 +351,9 @@ class SalesforceSyncServiceTest {
         private final Map<String, Map<String, Object>> users = new LinkedHashMap<>();
         private final List<Map<String, Object>> entitlements = new ArrayList<>();
 
-        void account(String id, String number, String recordType, String parentId, String name) {
-            Map<String, Object> r = new HashMap<>();
+        void account(final String id, final String number, final String recordType, final String parentId,
+                     final String name) {
+            final Map<String, Object> r = new HashMap<>();
             r.put("Id", id);
             r.put("AccountNumber", number);
             r.put("Name", name);
@@ -365,8 +362,9 @@ class SalesforceSyncServiceTest {
             accounts.put(id, r);
         }
 
-        void user(String id, String username, String first, String last, String contactId, String agencyId) {
-            Map<String, Object> r = new HashMap<>();
+        void user(final String id, final String username, final String first, final String last, final String contactId,
+                  final String agencyId) {
+            final Map<String, Object> r = new HashMap<>();
             r.put("Id", id);
             r.put("Username", username);
             r.put("FirstName", first);
@@ -378,11 +376,11 @@ class SalesforceSyncServiceTest {
             users.put(id, r);
         }
 
-        void entitlement(String contactId, String accountId) {
+        void entitlement(final String contactId, final String accountId) {
             entitlements.add(Map.of("ContactId", contactId, "AccountId", accountId));
         }
 
-        void remove(String id) {
+        void remove(final String id) {
             accounts.remove(id);
             users.remove(id);
         }
@@ -394,7 +392,7 @@ class SalesforceSyncServiceTest {
         }
 
         @Override
-        public List<Map<String, Object>> query(String soql) {
+        public List<Map<String, Object>> query(final String soql) {
             if (soql.contains("AccountContactRelation")) {
                 return List.copyOf(entitlements);
             }

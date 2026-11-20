@@ -35,7 +35,6 @@ import com.unboundid.ldap.sdk.SearchResultEntry;
 import com.unboundid.ldap.sdk.SearchScope;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import jakarta.inject.Provider;
 
@@ -60,33 +59,35 @@ public class SalesforceSyncService {
     private static final Logger LOG = Logger.getLogger(SalesforceSyncService.class);
     private static final String[] ACCOUNT_ATTRS = {"objectClass", "cn", "displayName", "acmeSalesforceId", "acmeSource"};
 
-    @Inject
-    SyncConfig cfg;
-
-    @Inject
-    SalesforceReader salesforce;
-
-    @Inject
-    Provider<LdapDirectory> directory;
+    private final SyncConfig cfg;
+    private final SalesforceReader salesforce;
+    private final Provider<LdapDirectory> directory;
 
     private final ReentrantLock running = new ReentrantLock();
     private final AtomicBoolean dirty = new AtomicBoolean();
     private final AtomicReference<Map<String, Object>> last = new AtomicReference<>(Map.of("status", "no run yet"));
+
+    public SalesforceSyncService(final SyncConfig cfg, final SalesforceReader salesforce,
+                                 final Provider<LdapDirectory> directory) {
+        this.cfg = cfg;
+        this.salesforce = salesforce;
+        this.directory = directory;
+    }
 
     /** Full comparison of Salesforce against the directory. Skips if a run is in progress. */
     public Map<String, Object> fullSync() {
         if (!running.tryLock()) {
             return Map.of("status", "skipped: a sync is already running");
         }
-        SyncReport r = new SyncReport(SOURCE);
+        final SyncReport r = new SyncReport(SOURCE);
         try {
             dirty.set(false);
-            LdapDirectory dir = directory.get();
+            final LdapDirectory dir = directory.get();
             syncAccounts(dir, r);
             if (cfg.agents().enabled()) {
                 syncAgents(dir, r);
             }
-        } catch (Exception e) {
+        } catch (final Exception e) {
             LOG.error("Salesforce sync failed", e);
             r.error("sync aborted: " + e);
         } finally {
@@ -94,13 +95,13 @@ public class SalesforceSyncService {
         }
         r.finish();
         LOG.info(r);
-        Map<String, Object> result = r.toMap();
+        final Map<String, Object> result = r.toMap();
         last.set(result);
         return result;
     }
 
     /** Called for each Salesforce change event; the next debounce tick runs a sync. */
-    public void markDirty(Object event) {
+    public void markDirty(final Object event) {
         dirty.set(true);
     }
 
@@ -115,33 +116,33 @@ public class SalesforceSyncService {
 
     // ---- agencies, agreements, books ---------------------------------------
 
-    void syncAccounts(LdapDirectory dir, SyncReport r) throws Exception {
-        SyncConfig.Accounts a = cfg.accounts();
-        String base = cfg.ldap().agenciesDn();
+    void syncAccounts(final LdapDirectory dir, final SyncReport r) throws Exception {
+        final SyncConfig.Accounts a = cfg.accounts();
+        final String base = cfg.ldap().agenciesDn();
 
-        Map<String, AccountLevel> types = new LinkedHashMap<>();
+        final Map<String, AccountLevel> types = new LinkedHashMap<>();
         a.recordTypes().forEach((sfType, level) -> types.put(sfType, AccountLevel.parse(level)));
-        var mapping = new AccountMapper.Mapping(a.idField(), a.parentField(), a.levelField(), a.cnField(), a.nameField(), types);
+        final var mapping = new AccountMapper.Mapping(a.idField(), a.parentField(), a.levelField(), a.cnField(), a.nameField(), types);
 
-        List<Map<String, Object>> rows = salesforce.query(a.soql());
+        final List<Map<String, Object>> rows = salesforce.query(a.soql());
         r.set("accounts.sourceRows", rows.size());
-        AccountMapper.Result mapped = AccountMapper.map(rows, mapping);
+        final AccountMapper.Result mapped = AccountMapper.map(rows, mapping);
         mapped.warnings().forEach(r::warn);
         r.set("accounts.skippedOtherTypes", mapped.skipped());
 
-        AccountTreePlanner.Plan plan = AccountTreePlanner.plan(mapped.nodes(), base);
+        final AccountTreePlanner.Plan plan = AccountTreePlanner.plan(mapped.nodes(), base);
         plan.rejected().forEach(x -> r.error("account " + x.node().sfId() + " (" + x.node().cn() + "): " + x.reason()));
 
-        Set<String> failed = new HashSet<>();
-        for (AccountLevel level : AccountLevel.values()) {
+        final Set<String> failed = new HashSet<>();
+        for (final AccountLevel level : AccountLevel.values()) {
             // Re-read each level so DNs reflect any parent renames or moves just made.
-            Map<String, SearchResultEntry> existing = indexBySalesforceId(
+            final Map<String, SearchResultEntry> existing = indexBySalesforceId(
                     dir.searchAll(base, SearchScope.SUB, Filter.createPresenceFilter("acmeSalesforceId"), ACCOUNT_ATTRS));
-            for (AccountTreePlanner.Planned p : plan.ordered()) {
+            for (final AccountTreePlanner.Planned p : plan.ordered()) {
                 if (p.node().level() != level) {
                     continue;
                 }
-                String id = p.node().sfId();
+                final String id = p.node().sfId();
                 if (p.node().parentSfId() != null && failed.contains(p.node().parentSfId())) {
                     failed.add(id);
                     r.error("account " + id + ": skipped because its parent could not be written");
@@ -151,7 +152,7 @@ public class SalesforceSyncService {
                     if (!upsertAccount(dir, p, existing.get(id), r)) {
                         failed.add(id);
                     }
-                } catch (LDAPException e) {
+                } catch (final LDAPException e) {
                     failed.add(id);
                     r.error("account " + id + " at " + p.dn() + ": " + e.getExceptionMessage());
                 }
@@ -161,15 +162,16 @@ public class SalesforceSyncService {
     }
 
     /** @return false if the record could not be written (its children are then skipped) */
-    private boolean upsertAccount(LdapDirectory dir, AccountTreePlanner.Planned p, SearchResultEntry existing,
-                                  SyncReport r) throws LDAPException {
-        var n = p.node();
+    private boolean upsertAccount(final LdapDirectory dir, final AccountTreePlanner.Planned p,
+                                  final SearchResultEntry existing,
+                                  final SyncReport r) throws LDAPException {
+        final var n = p.node();
         if (existing == null) {
-            SearchResultEntry atDn = dir.get(p.dn(), ACCOUNT_ATTRS);
+            final SearchResultEntry atDn = dir.get(p.dn(), ACCOUNT_ATTRS);
             if (atDn != null) {
                 return adoptAccount(dir, p, atDn, r);
             }
-            Entry e = new Entry(p.dn());
+            final Entry e = new Entry(p.dn());
             e.addAttribute("objectClass", n.level().objectClass(), "acmeSyncManaged");
             e.addAttribute("cn", n.cn());
             e.addAttribute("acmeSalesforceId", n.sfId());
@@ -182,7 +184,7 @@ public class SalesforceSyncService {
             return true;
         }
 
-        String owner = existing.getAttributeValue("acmeSource");
+        final String owner = existing.getAttributeValue("acmeSource");
         if (!SOURCE.equalsIgnoreCase(owner)) {
             r.error("account " + n.sfId() + ": " + existing.getDN() + " is owned by '" + owner + "', not the Salesforce sync");
             return false;
@@ -194,13 +196,13 @@ public class SalesforceSyncService {
         }
         String dn = existing.getDN();
         if (!LdapDirectory.sameDn(dn, p.dn())) {
-            DN target = new DN(p.dn());
-            boolean parentChanged = !LdapDirectory.sameDn(existing.getParentDNString(), p.parentDn());
+            final DN target = new DN(p.dn());
+            final boolean parentChanged = !LdapDirectory.sameDn(existing.getParentDNString(), p.parentDn());
             dir.modifyDn(dn, target.getRDNString(), parentChanged ? p.parentDn() : null);
             r.inc(parentChanged ? "accounts.moved" : "accounts.renamed");
             dn = p.dn();
         }
-        String haveName = existing.getAttributeValue("displayName");
+        final String haveName = existing.getAttributeValue("displayName");
         if (n.displayName() == null ? haveName != null : !n.displayName().equals(haveName)) {
             dir.modify(dn, List.of(n.displayName() == null
                     ? new Modification(ModificationType.DELETE, "displayName")
@@ -212,10 +214,11 @@ public class SalesforceSyncService {
         return true;
     }
 
-    private boolean adoptAccount(LdapDirectory dir, AccountTreePlanner.Planned p, SearchResultEntry atDn,
-                                 SyncReport r) throws LDAPException {
-        var n = p.node();
-        String otherId = atDn.getAttributeValue("acmeSalesforceId");
+    private boolean adoptAccount(final LdapDirectory dir, final AccountTreePlanner.Planned p,
+                                 final SearchResultEntry atDn,
+                                 final SyncReport r) throws LDAPException {
+        final var n = p.node();
+        final String otherId = atDn.getAttributeValue("acmeSalesforceId");
         if (otherId != null) {
             r.error("account " + n.sfId() + ": " + p.dn() + " already holds Salesforce record " + otherId
                     + " (two records share cn '" + n.cn() + "' under the same parent?)");
@@ -230,7 +233,7 @@ public class SalesforceSyncService {
             r.error("account " + n.sfId() + ": " + p.dn() + " is not a " + n.level().objectClass());
             return false;
         }
-        List<Modification> mods = new ArrayList<>();
+        final List<Modification> mods = new ArrayList<>();
         if (!atDn.hasObjectClass("acmeSyncManaged")) {
             mods.add(new Modification(ModificationType.ADD, "objectClass", "acmeSyncManaged"));
         }
@@ -248,26 +251,28 @@ public class SalesforceSyncService {
      * Deletes owned entries whose Salesforce record is gone, children first. The
      * refint overlay then removes the deleted DNs from every user's acmeAccountDN.
      */
-    private void removeAccounts(LdapDirectory dir, String base, Set<String> seen, int sourceRows, SyncReport r)
+    private void removeAccounts(final LdapDirectory dir, final String base, final Set<String> seen,
+                                final int sourceRows, final SyncReport r)
             throws LDAPException {
-        List<SearchResultEntry> owned = dir.searchAll(base, SearchScope.SUB,
+        final List<SearchResultEntry> owned = dir.searchAll(base, SearchScope.SUB,
                 Filter.createANDFilter(Filter.createEqualityFilter("acmeSource", SOURCE),
                         Filter.createPresenceFilter("acmeSalesforceId")), ACCOUNT_ATTRS);
-        List<SearchResultEntry> gone = owned.stream()
+        final List<SearchResultEntry> gone = owned.stream()
                 .filter(e -> !seen.contains(e.getAttributeValue("acmeSalesforceId")))
                 .sorted(Comparator.comparingInt((SearchResultEntry e) -> LdapDirectory.depth(e.getDN())).reversed())
                 .toList();
-        var refusal = SafetyGuard.checkRemoval(sourceRows, owned.size(), gone.size(), cfg.safety().maxRemovePercent());
+        final var refusal = SafetyGuard.checkRemoval(sourceRows, owned.size(), gone.size(),
+                cfg.safety().maxRemovePercent());
         if (refusal.isPresent()) {
             r.error("accounts not removed: " + refusal.get());
             return;
         }
-        for (SearchResultEntry e : gone) {
+        for (final SearchResultEntry e : gone) {
             try {
                 dir.delete(e.getDN());
                 r.inc("accounts.deleted");
-            } catch (LDAPException ex) {
-                String why = LdapDirectory.isResult(ex, ResultCode.NOT_ALLOWED_ON_NONLEAF)
+            } catch (final LDAPException ex) {
+                final String why = LdapDirectory.isResult(ex, ResultCode.NOT_ALLOWED_ON_NONLEAF)
                         ? "it still has child entries the sync does not own"
                         : ex.getExceptionMessage();
                 r.error("account " + e.getDN() + " is gone from Salesforce but was not deleted: " + why);
@@ -275,9 +280,9 @@ public class SalesforceSyncService {
         }
     }
 
-    private static Map<String, SearchResultEntry> indexBySalesforceId(List<SearchResultEntry> entries) {
-        Map<String, SearchResultEntry> m = new HashMap<>();
-        for (SearchResultEntry e : entries) {
+    private static Map<String, SearchResultEntry> indexBySalesforceId(final List<SearchResultEntry> entries) {
+        final Map<String, SearchResultEntry> m = new HashMap<>();
+        for (final SearchResultEntry e : entries) {
             m.put(e.getAttributeValue("acmeSalesforceId"), e);
         }
         return m;
@@ -285,17 +290,17 @@ public class SalesforceSyncService {
 
     // ---- brokers and agents ------------------------------------------------
 
-    void syncAgents(LdapDirectory dir, SyncReport r) throws Exception {
-        SyncConfig.Agents ag = cfg.agents();
-        String agencies = cfg.ldap().agenciesDn();
+    void syncAgents(final LdapDirectory dir, final SyncReport r) throws Exception {
+        final SyncConfig.Agents ag = cfg.agents();
+        final String agencies = cfg.ldap().agenciesDn();
 
-        Map<String, String> accountDns = new HashMap<>();
-        for (SearchResultEntry e : dir.searchAll(agencies, SearchScope.SUB,
+        final Map<String, String> accountDns = new HashMap<>();
+        for (final SearchResultEntry e : dir.searchAll(agencies, SearchScope.SUB,
                 Filter.createPresenceFilter("acmeSalesforceId"), "acmeSalesforceId")) {
             accountDns.put(e.getAttributeValue("acmeSalesforceId"), e.getDN());
         }
 
-        List<Map<String, Object>> users = salesforce.query(ag.soql());
+        final List<Map<String, Object>> users = salesforce.query(ag.soql());
         r.set("agents.sourceRows", users.size());
         Map<String, Set<String>> entitlements = Map.of();
         if (ag.entitlementSoql().isPresent()) {
@@ -303,44 +308,44 @@ public class SalesforceSyncService {
                     ag.entitlementContactField(), ag.entitlementAccountField());
         }
 
-        var mapping = new AgentMapper.Mapping(ag.idField(), ag.uidField(), ag.activeField(), ag.contactField(),
+        final var mapping = new AgentMapper.Mapping(ag.idField(), ag.uidField(), ag.activeField(), ag.contactField(),
                 ag.agencyField().orElse(null), ag.attributes());
-        AgentMapper.Result mapped = AgentMapper.map(users, entitlements, mapping, accountDns::get);
+        final AgentMapper.Result mapped = AgentMapper.map(users, entitlements, mapping, accountDns::get);
         mapped.warnings().forEach(r::warn);
 
-        PersonWriter writer = new PersonWriter(dir, cfg.ldap().peopleDn());
-        var profile = new PersonWriter.Profile(SOURCE, "agent", ag.ou(),
+        final PersonWriter writer = new PersonWriter(dir, cfg.ldap().peopleDn());
+        final var profile = new PersonWriter.Profile(SOURCE, "agent", ag.ou(),
                 // acmeFeatureAccess so special agents can be given feature grants by hand;
                 // the sync itself never touches acmeFeatureDN.
                 List.of("inetOrgPerson", "acmeUser", "acmeAccountAccess", "acmeFeatureAccess"), ag.passwordPolicy(),
                 dn -> LdapDirectory.isUnder(dn, agencies), ag.pruneGrants(), cfg.safety().adoptUnowned());
 
-        Set<String> seen = new HashSet<>();
-        for (PersonSpec spec : mapped.people()) {
+        final Set<String> seen = new HashSet<>();
+        for (final PersonSpec spec : mapped.people()) {
             seen.add(spec.sfId());
             try {
                 writer.upsert(spec, profile, r);
-            } catch (LDAPException e) {
+            } catch (final LDAPException e) {
                 r.error("agent " + spec.uid() + " (" + spec.sfId() + "): " + e.getExceptionMessage());
             }
         }
 
         // Agents who are no longer returned (deactivated or filtered out in Salesforce) are locked, not deleted.
-        List<SearchResultEntry> owned = dir.searchAll(ag.ou(), SearchScope.ONE,
+        final List<SearchResultEntry> owned = dir.searchAll(ag.ou(), SearchScope.ONE,
                 Filter.createANDFilter(Filter.createEqualityFilter("acmeSource", SOURCE),
                         Filter.createPresenceFilter("acmeSalesforceId")), PersonWriter.READ_ATTRS);
-        List<SearchResultEntry> gone = owned.stream()
+        final List<SearchResultEntry> gone = owned.stream()
                 .filter(e -> !seen.contains(e.getAttributeValue("acmeSalesforceId")) && !e.hasAttribute("acmeDeactivated"))
                 .toList();
-        var refusal = SafetyGuard.checkRemoval(users.size(), owned.size(), gone.size(), cfg.safety().maxRemovePercent());
+        final var refusal = SafetyGuard.checkRemoval(users.size(), owned.size(), gone.size(), cfg.safety().maxRemovePercent());
         if (refusal.isPresent()) {
             r.error("agents not deactivated: " + refusal.get());
             return;
         }
-        for (SearchResultEntry e : gone) {
+        for (final SearchResultEntry e : gone) {
             try {
                 writer.deactivate(e, profile, r);
-            } catch (LDAPException ex) {
+            } catch (final LDAPException ex) {
                 r.error("agent " + e.getDN() + ": " + ex.getExceptionMessage());
             }
         }

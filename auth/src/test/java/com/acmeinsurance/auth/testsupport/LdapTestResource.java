@@ -7,7 +7,7 @@ import java.util.Map;
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
 
 /** Starts a {@link TestDirectory} for the Quarkus tests and points the app at it. */
-public class LdapTestResource implements QuarkusTestResourceLifecycleManager {
+public final class LdapTestResource implements QuarkusTestResourceLifecycleManager {
 
     private static TestDirectory directory;
     private Path keyDir;
@@ -21,7 +21,7 @@ public class LdapTestResource implements QuarkusTestResourceLifecycleManager {
         try {
             directory = new TestDirectory();
             keyDir = Files.createTempDirectory("auth-keys");
-        } catch (Exception e) {
+        } catch (final Exception e) {
             throw new IllegalStateException(e);
         }
         return Map.of(
@@ -41,7 +41,7 @@ public class LdapTestResource implements QuarkusTestResourceLifecycleManager {
         }
         try (var files = Files.walk(keyDir)) {
             files.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
-        } catch (Exception e) {
+        } catch (final Exception e) {
             // best effort
         }
     }

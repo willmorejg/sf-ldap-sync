@@ -7,12 +7,12 @@ public final class Dns {
     }
 
     /** Escapes an attribute value for use in an RDN, per RFC 4514 section 2.4. */
-    public static String escapeValue(String value) {
-        StringBuilder sb = new StringBuilder(value.length() + 8);
+    public static String escapeValue(final String value) {
+        final StringBuilder sb = new StringBuilder(value.length() + 8);
         for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            boolean leading = i == 0 && (c == ' ' || c == '#');
-            boolean trailing = i == value.length() - 1 && c == ' ';
+            final char c = value.charAt(i);
+            final boolean leading = i == 0 && (c == ' ' || c == '#');
+            final boolean trailing = i == value.length() - 1 && c == ' ';
             if (leading || trailing || ",+\"\\<>;=".indexOf(c) >= 0) {
                 sb.append('\\').append(c);
             } else if (c == '\0') {
@@ -24,7 +24,7 @@ public final class Dns {
         return sb.toString();
     }
 
-    public static String child(String attr, String value, String parentDn) {
+    public static String child(final String attr, final String value, final String parentDn) {
         return attr + "=" + escapeValue(value) + "," + parentDn;
     }
 }

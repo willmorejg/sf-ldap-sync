@@ -11,7 +11,7 @@ public enum AccountLevel {
     private final String objectClass;
     private final AccountLevel parent;
 
-    AccountLevel(String objectClass, AccountLevel parent) {
+    AccountLevel(final String objectClass, final AccountLevel parent) {
         this.objectClass = objectClass;
         this.parent = parent;
     }
@@ -31,7 +31,7 @@ public enum AccountLevel {
     }
 
     /** Parses "agency", "agreement" or "book" (any case). */
-    public static AccountLevel parse(String s) {
+    public static AccountLevel parse(final String s) {
         return valueOf(s.trim().toUpperCase(Locale.ROOT));
     }
 }

@@ -23,20 +23,20 @@ public final class AccountMapper {
     private AccountMapper() {
     }
 
-    public static Result map(List<Map<String, Object>> records, Mapping m) {
-        List<AccountNode> nodes = new ArrayList<>();
-        List<String> warnings = new ArrayList<>();
+    public static Result map(final List<Map<String, Object>> records, final Mapping m) {
+        final List<AccountNode> nodes = new ArrayList<>();
+        final List<String> warnings = new ArrayList<>();
         int skipped = 0;
-        for (Map<String, Object> r : records) {
-            String rawId = Records.path(r, m.idField());
+        for (final Map<String, Object> r : records) {
+            final String rawId = Records.path(r, m.idField());
             if (!SalesforceIds.isValid(rawId)) {
                 warnings.add("Skipped account record without a valid " + m.idField() + ": " + rawId);
                 skipped++;
                 continue;
             }
-            String id = SalesforceIds.to18(rawId);
-            String type = Records.path(r, m.levelField());
-            AccountLevel level = type == null ? null : m.recordTypes().get(type);
+            final String id = SalesforceIds.to18(rawId);
+            final String type = Records.path(r, m.levelField());
+            final AccountLevel level = type == null ? null : m.recordTypes().get(type);
             if (level == null) {
                 skipped++;
                 continue;

@@ -13,12 +13,12 @@ public final class Records {
      * {@code RecordType.DeveloperName}, as a trimmed string, or null when any part
      * of the path is missing, null or blank.
      */
-    public static String path(Map<String, Object> record, String dottedPath) {
+    public static String path(final Map<String, Object> record, final String dottedPath) {
         if (record == null || dottedPath == null || dottedPath.isBlank()) {
             return null;
         }
         Object current = record;
-        for (String part : dottedPath.split("\\.")) {
+        for (final String part : dottedPath.split("\\.")) {
             if (!(current instanceof Map<?, ?> map)) {
                 return null;
             }
@@ -30,13 +30,13 @@ public final class Records {
         if (current instanceof Map<?, ?>) {
             return null;
         }
-        String s = String.valueOf(current).trim();
+        final String s = String.valueOf(current).trim();
         return s.isEmpty() ? null : s;
     }
 
     /** Interprets a Salesforce boolean field; missing means {@code defaultValue}. */
-    public static boolean bool(Map<String, Object> record, String dottedPath, boolean defaultValue) {
-        String v = path(record, dottedPath);
+    public static boolean bool(final Map<String, Object> record, final String dottedPath, final boolean defaultValue) {
+        final String v = path(record, dottedPath);
         return v == null ? defaultValue : Boolean.parseBoolean(v);
     }
 }

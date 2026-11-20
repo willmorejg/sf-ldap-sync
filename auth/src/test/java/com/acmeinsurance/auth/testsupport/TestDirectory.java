@@ -71,8 +71,8 @@ public final class TestDirectory implements AutoCloseable {
     private final Map<Long, String> boundDn = new ConcurrentHashMap<>();
 
     public TestDirectory() throws Exception {
-        Path ldif = ldifDir();
-        InMemoryDirectoryServerConfig config = new InMemoryDirectoryServerConfig(BASE);
+        final Path ldif = ldifDir();
+        final InMemoryDirectoryServerConfig config = new InMemoryDirectoryServerConfig(BASE);
         config.setSchema(Schema.mergeSchemas(
                 Schema.getDefaultStandardSchema(),
                 configSchema(ldif.resolve("01-acmeinsurance-schema.ldif")),
@@ -86,8 +86,8 @@ public final class TestDirectory implements AutoCloseable {
         config.addInMemoryOperationInterceptor(new PolicyStandIn());
 
         server = new InMemoryDirectoryServer(config);
-        DN policies = new DN("ou=policies," + BASE);
-        for (String file : List.of("20-dit.ldif", "30-sample-clients.ldif", "31-sample-agencies.ldif",
+        final DN policies = new DN("ou=policies," + BASE);
+        for (final String file : List.of("20-dit.ldif", "30-sample-clients.ldif", "31-sample-agencies.ldif",
                 "32-sample-features.ldif", "33-sample-oauth-public.ldif", "34-sample-oauth-confidential.ldif")) {
             try (LDIFReader r = new LDIFReader(ldif.resolve(file).toFile())) {
                 Entry e;
@@ -113,15 +113,15 @@ public final class TestDirectory implements AutoCloseable {
         return server;
     }
 
-    public SearchResultEntry get(String dn) throws Exception {
+    public SearchResultEntry get(final String dn) throws Exception {
         return server.getEntry(dn, "*", "+", "pwdReset", "pwdChangedTime");
     }
 
-    public void add(String... ldifLines) throws Exception {
+    public void add(final String... ldifLines) throws Exception {
         server.add(ldifLines);
     }
 
-    public void modify(String... ldifLines) throws Exception {
+    public void modify(final String... ldifLines) throws Exception {
         server.modify(ldifLines);
     }
 
@@ -134,32 +134,32 @@ public final class TestDirectory implements AutoCloseable {
     private final class PolicyStandIn extends InMemoryOperationInterceptor {
 
         @Override
-        public void processSimpleBindResult(InMemoryInterceptedSimpleBindResult r) {
-            BindResult result = r.getResult();
+        public void processSimpleBindResult(final InMemoryInterceptedSimpleBindResult r) {
+            final BindResult result = r.getResult();
             if (result.getResultCode() != ResultCode.SUCCESS) {
                 return;
             }
-            String dn = r.getRequest().getBindDN();
+            final String dn = r.getRequest().getBindDN();
             boundDn.put(r.getConnectionID(), dn);
             try {
-                SearchResultEntry e = dn.isEmpty() ? null : server.getEntry(dn, "pwdReset");
+                final SearchResultEntry e = dn.isEmpty() ? null : server.getEntry(dn, "pwdReset");
                 if (e != null && "TRUE".equalsIgnoreCase(e.getAttributeValue("pwdReset"))) {
                     r.setResult(new BindResult(result.getMessageID(), ResultCode.SUCCESS, null, null, null,
                             new Control[] {new DraftBeheraLDAPPasswordPolicy10ResponseControl(null, -1,
                                     DraftBeheraLDAPPasswordPolicy10ErrorType.CHANGE_AFTER_RESET)}));
                 }
-            } catch (Exception ex) {
+            } catch (final Exception ex) {
                 throw new IllegalStateException(ex);
             }
         }
 
         @Override
-        public void processExtendedResult(InMemoryInterceptedExtendedResult r) {
+        public void processExtendedResult(final InMemoryInterceptedExtendedResult r) {
             if (!PasswordModifyExtendedRequest.PASSWORD_MODIFY_REQUEST_OID.equals(r.getRequest().getOID())
                     || r.getResult().getResultCode() != ResultCode.SUCCESS) {
                 return;
             }
-            String dn = boundDn.get(r.getConnectionID());
+            final String dn = boundDn.get(r.getConnectionID());
             try {
                 if (dn != null && server.getEntry(dn, "pwdReset").hasAttribute("pwdReset")) {
                     server.modify(dn, new Modification(ModificationType.DELETE, "pwdReset"));
@@ -168,18 +168,18 @@ public final class TestDirectory implements AutoCloseable {
                     server.modify(dn, new Modification(ModificationType.REPLACE, "pwdChangedTime",
                             StaticUtils.encodeGeneralizedTime(System.currentTimeMillis())));
                 }
-            } catch (Exception ex) {
+            } catch (final Exception ex) {
                 throw new IllegalStateException(ex);
             }
         }
     }
 
-    private static Schema configSchema(Path file) throws Exception {
+    private static Schema configSchema(final Path file) throws Exception {
         try (LDIFReader r = new LDIFReader(file.toFile())) {
-            Entry e = r.readEntry();
-            List<Attribute> attrs = new ArrayList<>();
-            String[] types = e.getAttributeValues("olcAttributeTypes");
-            String[] classes = e.getAttributeValues("olcObjectClasses");
+            final Entry e = r.readEntry();
+            final List<Attribute> attrs = new ArrayList<>();
+            final String[] types = e.getAttributeValues("olcAttributeTypes");
+            final String[] classes = e.getAttributeValues("olcObjectClasses");
             if (types != null) {
                 attrs.add(new Attribute("attributeTypes", types));
             }
@@ -191,7 +191,7 @@ public final class TestDirectory implements AutoCloseable {
     }
 
     private static Path ldifDir() {
-        Path dir = Path.of(System.getProperty("user.dir")).resolve("../openldap/ldif").normalize();
+        final Path dir = Path.of(System.getProperty("user.dir")).resolve("../openldap/ldif").normalize();
         if (!Files.isDirectory(dir)) {
             throw new IllegalStateException("Schema LDIFs not found at " + dir
                     + "; run the tests from the auth module of the full project checkout");

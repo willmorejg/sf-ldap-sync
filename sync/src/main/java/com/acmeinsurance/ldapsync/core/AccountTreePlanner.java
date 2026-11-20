@@ -37,28 +37,29 @@ public final class AccountTreePlanner {
     private AccountTreePlanner() {
     }
 
-    public static Plan plan(Collection<AccountNode> nodes, String agenciesDn) {
-        Map<String, AccountNode> byId = new LinkedHashMap<>();
-        List<Rejected> rejected = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
-        for (AccountNode n : nodes) {
+    public static Plan plan(final Collection<AccountNode> nodes, final String agenciesDn) {
+        final Map<String, AccountNode> byId = new LinkedHashMap<>();
+        final List<Rejected> rejected = new ArrayList<>();
+        final Set<String> seen = new HashSet<>();
+        for (final AccountNode n : nodes) {
             seen.add(n.sfId());
             if (byId.putIfAbsent(n.sfId(), n) != null) {
                 rejected.add(new Rejected(n, "duplicate Salesforce ID in the query result"));
             }
         }
 
-        Map<String, String> dnById = new HashMap<>();
-        Set<String> usedDns = new HashSet<>();
-        List<Planned> ordered = new ArrayList<>();
-        Comparator<AccountNode> byCnThenId = Comparator.comparing(AccountNode::cn).thenComparing(AccountNode::sfId);
+        final Map<String, String> dnById = new HashMap<>();
+        final Set<String> usedDns = new HashSet<>();
+        final List<Planned> ordered = new ArrayList<>();
+        final Comparator<AccountNode> byCnThenId =
+                Comparator.comparing(AccountNode::cn).thenComparing(AccountNode::sfId);
 
-        for (AccountLevel level : AccountLevel.values()) {
-            List<AccountNode> atLevel = byId.values().stream()
+        for (final AccountLevel level : AccountLevel.values()) {
+            final List<AccountNode> atLevel = byId.values().stream()
                     .filter(n -> n.level() == level)
                     .sorted(byCnThenId)
                     .toList();
-            for (AccountNode n : atLevel) {
+            for (final AccountNode n : atLevel) {
                 String parentDn;
                 if (level.parent() == null) {
                     parentDn = agenciesDn;
@@ -67,7 +68,7 @@ public final class AccountTreePlanner {
                         rejected.add(new Rejected(n, level.label() + " has no parent " + level.parent().label()));
                         continue;
                     }
-                    AccountNode parent = byId.get(n.parentSfId());
+                    final AccountNode parent = byId.get(n.parentSfId());
                     if (parent == null) {
                         rejected.add(new Rejected(n, "parent " + n.parentSfId() + " is not in the query result"));
                         continue;
@@ -83,7 +84,7 @@ public final class AccountTreePlanner {
                         continue;
                     }
                 }
-                String dn = Dns.child("cn", n.cn(), parentDn);
+                final String dn = Dns.child("cn", n.cn(), parentDn);
                 if (!usedDns.add(dn.toLowerCase(Locale.ROOT))) {
                     rejected.add(new Rejected(n, "cn '" + n.cn() + "' is already used by another record under the same parent"));
                     continue;
