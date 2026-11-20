@@ -1,5 +1,7 @@
 # Acme Insurance LDAP sync and token service
 
+<center><sm><b>SonarQube:</b></sm></center>
+
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=willmorejg_sf-ldap-sync&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=willmorejg_sf-ldap-sync)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=willmorejg_sf-ldap-sync&metric=coverage)](https://sonarcloud.io/summary/overall?id=willmorejg_sf-ldap-sync)
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=willmorejg_sf-ldap-sync&metric=sqale_rating)](https://sonarcloud.io/summary/overall?id=willmorejg_sf-ldap-sync)
