@@ -1,5 +1,16 @@
 package com.acmeinsurance.ldapsync.ldap;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.function.Predicate;
+
 import static com.acmeinsurance.ldapsync.core.Constants.ACME_ACCOUNT_DN;
 import static com.acmeinsurance.ldapsync.core.Constants.ACME_DEACTIVATED;
 import static com.acmeinsurance.ldapsync.core.Constants.ACME_FEATURE_DN;
@@ -19,18 +30,6 @@ import static com.acmeinsurance.ldapsync.core.Constants.SOURCE_CSV;
 import static com.acmeinsurance.ldapsync.core.Constants.SOURCE_CSV_LEGACY_PREFIX;
 import static com.acmeinsurance.ldapsync.core.Constants.SOURCE_MANUAL;
 import static com.acmeinsurance.ldapsync.core.Constants.UID;
-
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Set;
-import java.util.function.Predicate;
-
 import com.acmeinsurance.ldapsync.core.PersonSpec;
 import com.acmeinsurance.ldapsync.core.SyncReport;
 import com.acmeinsurance.ldapsync.core.ValueDiff;
@@ -56,7 +55,7 @@ import com.unboundid.ldap.sdk.SearchScope;
 public final class PersonWriter {
 
     /** Attributes read from existing entries; pwdAccountLockedTime is operational. */
-    public static final String[] READ_ATTRS = {"*", PWD_ACCOUNT_LOCKED_TIME};
+    protected static final String[] READ_ATTRS = {"*", PWD_ACCOUNT_LOCKED_TIME};
 
     private static final Set<String> REQUIRED_ATTRS = Set.of(CN, SN);
     private static final DateTimeFormatter GENERALIZED_TIME =
