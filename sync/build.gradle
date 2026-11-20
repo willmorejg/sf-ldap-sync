@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id 'io.quarkus'
+    id 'jacoco'
     id 'org.sonarqube' version '6.2.0.5505'
 }
 
@@ -12,6 +13,8 @@ sonar {
         property 'sonar.projectKey', 'willmorejg_sf-ldap-sync'
         property 'sonar.organization', 'willmorejg'
         property 'sonar.host.url', 'https://sonarcloud.io'
+        property 'sonar.coverage.jacoco.xmlReportPaths',
+                layout.buildDirectory.file('reports/jacoco/test/jacocoTestReport.xml').get().asFile.path
     }
 }
 
@@ -61,8 +64,23 @@ test {
     // declaring it as an input reruns them when the schema or tree changes.
     workingDir = projectDir
     inputs.dir('../openldap/ldif').withPropertyName('ldif').withPathSensitivity(PathSensitivity.RELATIVE)
+    // Every test run writes the coverage report that the Sonar analysis reads.
+    finalizedBy jacocoTestReport
     testLogging {
         events 'failed'
         exceptionFormat = 'full'
+    }
+}
+
+jacoco {
+    // 0.8.14 is the first release that reads Java 25 class files.
+    toolVersion = '0.8.14'
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
     }
 }

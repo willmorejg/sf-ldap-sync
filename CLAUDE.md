@@ -135,6 +135,11 @@ All documentation except README.md (and this file, which Claude Code expects at 
 `docs/index.md`. When a flow changes (routes, `SalesforceSyncService`, `CsvIntakeService`,
 `PersonWriter`, `AuthorizeResource`, `TokenResource`, `entrypoint.sh`), update its diagram too.
 
+## Code quality
+SonarCloud analyses `sync/` from `.github/workflows/scan.yml` (`./gradlew build sonar`). Coverage comes from
+JaCoCo 0.8.14 (the first release for Java 25 class files): `test` is finalized by `jacocoTestReport`, and the XML path is
+set as `sonar.coverage.jacoco.xmlReportPaths`. Locally 83.8% of lines (2026-11-20). `auth/` is not analysed.
+
 ## OpenAPI
 - sync: the HTTP endpoints are Camel REST DSL in `routes/salesforce-sync.camel.yaml`. The REST block is
   always on, so the spec always lists both operations; never set `disabled:` on it (Camel then drops the
