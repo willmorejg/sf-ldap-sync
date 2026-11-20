@@ -1,5 +1,22 @@
 package com.acmeinsurance.ldapsync.csv;
 
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_SALESFORCE_ID;
+import static com.acmeinsurance.ldapsync.core.Constants.CN;
+import static com.acmeinsurance.ldapsync.core.Constants.CSV_FOLDER_INTERNAL;
+import static com.acmeinsurance.ldapsync.core.Constants.CSV_FOLDER_MEMBERS;
+import static com.acmeinsurance.ldapsync.core.Constants.CSV_FOLDER_OTHER;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_ACCOUNT_ACCESS;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_FEATURE_ACCESS;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_MEMBER_ACCESS;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_USER;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_INET_ORG_PERSON;
+import static com.acmeinsurance.ldapsync.core.Constants.REF_CLIENT_PREFIX;
+import static com.acmeinsurance.ldapsync.core.Constants.REF_SALESFORCE_PREFIX;
+import static com.acmeinsurance.ldapsync.core.Constants.SOURCE_CSV;
+import static com.acmeinsurance.ldapsync.core.Constants.USER_TYPE_INTERNAL;
+import static com.acmeinsurance.ldapsync.core.Constants.USER_TYPE_MEMBER;
+import static com.acmeinsurance.ldapsync.core.Constants.USER_TYPE_OTHER;
+
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
@@ -54,11 +71,10 @@ public class CsvIntakeService {
 
     private static final Logger LOG = Logger.getLogger(CsvIntakeService.class);
 
-    /** acmeSource of every entry the CSV feeds write. */
-    public static final String SOURCE = "csv";
 
     private final SyncConfig cfg;
     private final Provider<LdapDirectory> directory;
+
 
     public CsvIntakeService(final SyncConfig cfg, final Provider<LdapDirectory> directory) {
         this.cfg = cfg;
@@ -95,7 +111,8 @@ public class CsvIntakeService {
                         spec = spec.withFeatureDns(resolveFeatures(mapped.featureRefs()));
                     }
                     if (mapped.accountRefs() != null) {
-                        if (accountDnBySfId == null && mapped.accountRefs().stream().anyMatch(s -> s.startsWith("sf:"))) {
+                        if (accountDnBySfId == null
+                                && mapped.accountRefs().stream().anyMatch(s -> s.startsWith(REF_SALESFORCE_PREFIX))) {
                             accountDnBySfId = loadAccountIndex(dir);
                         }
                         spec = spec.withAccountDns(resolve(mapped.accountRefs(), accountDnBySfId));
@@ -121,14 +138,16 @@ public class CsvIntakeService {
         final String people = cfg.ldap().peopleDn();
         final boolean adopt = cfg.safety().adoptUnowned();
         return switch (type) {
-            case "internal" -> new PersonWriter.Profile(SOURCE, "internal", "ou=internal," + people,
-                    List.of("inetOrgPerson", "acmeUser", "acmeFeatureAccess", "acmeAccountAccess"),
+            case CSV_FOLDER_INTERNAL -> new PersonWriter.Profile(SOURCE_CSV, USER_TYPE_INTERNAL,
+                    "ou=internal," + people,
+                    List.of(OC_INET_ORG_PERSON, OC_ACME_USER, OC_ACME_FEATURE_ACCESS, OC_ACME_ACCOUNT_ACCESS),
                     cfg.csv().internalPasswordPolicy(), dn -> true, true, adopt);
-            case "members" -> new PersonWriter.Profile(SOURCE, "member", "ou=members," + people,
-                    List.of("inetOrgPerson", "acmeUser", "acmeMemberAccess"), null, dn -> true, true, adopt);
-            case "other" -> new PersonWriter.Profile(SOURCE, "other", "ou=other," + people,
-                    List.of("inetOrgPerson", "acmeUser", "acmeFeatureAccess", "acmeAccountAccess", "acmeMemberAccess"), null,
-                    dn -> true, true, adopt);
+            case CSV_FOLDER_MEMBERS -> new PersonWriter.Profile(SOURCE_CSV, USER_TYPE_MEMBER, "ou=members," + people,
+                    List.of(OC_INET_ORG_PERSON, OC_ACME_USER, OC_ACME_MEMBER_ACCESS), null, dn -> true, true, adopt);
+            case CSV_FOLDER_OTHER -> new PersonWriter.Profile(SOURCE_CSV, USER_TYPE_OTHER, "ou=other," + people,
+                    List.of(OC_INET_ORG_PERSON, OC_ACME_USER, OC_ACME_FEATURE_ACCESS, OC_ACME_ACCOUNT_ACCESS,
+                            OC_ACME_MEMBER_ACCESS),
+                    null, dn -> true, true, adopt);
             default -> throw new IllegalArgumentException("Put CSV files in internal/, members/ or other/ "
                     + "(agents come from Salesforce), not '" + type + "'");
         };
@@ -136,11 +155,12 @@ public class CsvIntakeService {
 
     /** Members hold policy numbers only; internal users have no policy grants. */
     private static void checkAllowed(final String type, final CsvRowMapper.Row row) {
-        if ("members".equals(type) && (row.accountRefs() != null && !row.accountRefs().isEmpty()
+        if (CSV_FOLDER_MEMBERS.equals(type) && (row.accountRefs() != null && !row.accountRefs().isEmpty()
                 || row.featureRefs() != null && !row.featureRefs().isEmpty())) {
             throw new IllegalArgumentException("members hold policy numbers only, not account or feature grants");
         }
-        if ("internal".equals(type) && row.spec().policyNumbers() != null && !row.spec().policyNumbers().isEmpty()) {
+        if (CSV_FOLDER_INTERNAL.equals(type) && row.spec().policyNumbers() != null
+                && !row.spec().policyNumbers().isEmpty()) {
             throw new IllegalArgumentException("internal users do not hold policy numbers");
         }
     }
@@ -162,9 +182,9 @@ public class CsvIntakeService {
                 throw new IllegalArgumentException("feature reference '" + ref
                         + "' must be feature, feature/permission or a DN");
             }
-            String dn = Dns.child("cn", parts[0].trim(), cfg.ldap().featuresDn());
+            String dn = Dns.child(CN, parts[0].trim(), cfg.ldap().featuresDn());
             if (parts.length == 2) {
-                dn = Dns.child("cn", parts[1].trim(), dn);
+                dn = Dns.child(CN, parts[1].trim(), dn);
             }
             dns.add(dn);
         }
@@ -178,15 +198,15 @@ public class CsvIntakeService {
     private Set<String> resolve(final Set<String> refs, final Map<String, String> bySfId) {
         final Set<String> dns = new LinkedHashSet<>();
         for (final String ref : refs) {
-            if (ref.startsWith("sf:")) {
+            if (ref.startsWith(REF_SALESFORCE_PREFIX)) {
                 final String id = ref.substring(3).trim();
                 final String dn = SalesforceIds.isValid(id) ? bySfId.get(SalesforceIds.to18(id)) : null;
                 if (dn == null) {
                     throw new IllegalArgumentException("account " + ref + " is not in the directory");
                 }
                 dns.add(dn);
-            } else if (ref.startsWith("client:")) {
-                dns.add(Dns.child("cn", ref.substring(7).trim(), cfg.ldap().clientsDn()));
+            } else if (ref.startsWith(REF_CLIENT_PREFIX)) {
+                dns.add(Dns.child(CN, ref.substring(7).trim(), cfg.ldap().clientsDn()));
             } else if (ref.contains("=")) {
                 dns.add(ref);
             } else {
@@ -199,8 +219,8 @@ public class CsvIntakeService {
     private Map<String, String> loadAccountIndex(final LdapDirectory dir) throws LDAPException {
         final Map<String, String> m = new HashMap<>();
         for (final SearchResultEntry e : dir.searchAll(cfg.ldap().accountsDn(), SearchScope.SUB,
-                Filter.createPresenceFilter("acmeSalesforceId"), "acmeSalesforceId")) {
-            m.put(e.getAttributeValue("acmeSalesforceId"), e.getDN());
+                Filter.createPresenceFilter(ACME_SALESFORCE_ID), ACME_SALESFORCE_ID)) {
+            m.put(e.getAttributeValue(ACME_SALESFORCE_ID), e.getDN());
         }
         return m;
     }

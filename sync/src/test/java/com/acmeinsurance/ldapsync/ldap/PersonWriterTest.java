@@ -24,6 +24,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.acmeinsurance.ldapsync.core.Constants;
 import com.acmeinsurance.ldapsync.core.PersonSpec;
 import com.acmeinsurance.ldapsync.core.SyncReport;
 import com.acmeinsurance.ldapsync.testsupport.TestDirectory;
@@ -152,7 +153,7 @@ final class PersonWriterTest {
         writer.upsert(agent("ada", false, Set.of()), agents(false), report);
 
         final SearchResultEntry locked = ldap.get("uid=ada," + AGENTS);
-        assertEquals(PersonWriter.PERMANENT_LOCK, locked.getAttributeValue("pwdAccountLockedTime"));
+        assertEquals(Constants.PERMANENT_LOCK, locked.getAttributeValue("pwdAccountLockedTime"));
         assertTrue(locked.hasAttribute("acmeDeactivated"));
         assertEquals(1, report.count("agent.deactivated"));
 

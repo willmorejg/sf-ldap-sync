@@ -1,5 +1,19 @@
 package com.acmeinsurance.ldapsync.salesforce;
 
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_DEACTIVATED;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_SALESFORCE_ID;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_SOURCE;
+import static com.acmeinsurance.ldapsync.core.Constants.CN;
+import static com.acmeinsurance.ldapsync.core.Constants.DISPLAY_NAME;
+import static com.acmeinsurance.ldapsync.core.Constants.OBJECT_CLASS;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_ACCOUNT_ACCESS;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_FEATURE_ACCESS;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_SYNC_MANAGED;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_USER;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_INET_ORG_PERSON;
+import static com.acmeinsurance.ldapsync.core.Constants.SOURCE_SALESFORCE;
+import static com.acmeinsurance.ldapsync.core.Constants.USER_TYPE_AGENT;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -55,9 +69,8 @@ import jakarta.inject.Provider;
 @Named("salesforceSync")
 public class SalesforceSyncService {
 
-    public static final String SOURCE = "salesforce";
     private static final Logger LOG = Logger.getLogger(SalesforceSyncService.class);
-    private static final String[] ACCOUNT_ATTRS = {"objectClass", "cn", "displayName", "acmeSalesforceId", "acmeSource"};
+    private static final String[] ACCOUNT_ATTRS = {OBJECT_CLASS, CN, DISPLAY_NAME, ACME_SALESFORCE_ID, ACME_SOURCE};
 
     private final SyncConfig cfg;
     private final SalesforceReader salesforce;
@@ -79,7 +92,7 @@ public class SalesforceSyncService {
         if (!running.tryLock()) {
             return Map.of("status", "skipped: a sync is already running");
         }
-        final SyncReport r = new SyncReport(SOURCE);
+        final SyncReport r = new SyncReport(SOURCE_SALESFORCE);
         try {
             dirty.set(false);
             final LdapDirectory dir = directory.get();
@@ -137,7 +150,8 @@ public class SalesforceSyncService {
         for (final AccountLevel level : AccountLevel.values()) {
             // Re-read each level so DNs reflect any parent renames or moves just made.
             final Map<String, SearchResultEntry> existing = indexBySalesforceId(
-                    dir.searchAll(base, SearchScope.SUB, Filter.createPresenceFilter("acmeSalesforceId"), ACCOUNT_ATTRS));
+                    dir.searchAll(base, SearchScope.SUB, Filter.createPresenceFilter(ACME_SALESFORCE_ID),
+                            ACCOUNT_ATTRS));
             for (final AccountTreePlanner.Planned p : plan.ordered()) {
                 if (p.node().level() != level) {
                     continue;
@@ -172,20 +186,20 @@ public class SalesforceSyncService {
                 return adoptAccount(dir, p, atDn, r);
             }
             final Entry e = new Entry(p.dn());
-            e.addAttribute("objectClass", n.level().objectClass(), "acmeSyncManaged");
-            e.addAttribute("cn", n.cn());
-            e.addAttribute("acmeSalesforceId", n.sfId());
-            e.addAttribute("acmeSource", SOURCE);
+            e.addAttribute(OBJECT_CLASS, n.level().objectClass(), OC_ACME_SYNC_MANAGED);
+            e.addAttribute(CN, n.cn());
+            e.addAttribute(ACME_SALESFORCE_ID, n.sfId());
+            e.addAttribute(ACME_SOURCE, SOURCE_SALESFORCE);
             if (n.displayName() != null) {
-                e.addAttribute("displayName", n.displayName());
+                e.addAttribute(DISPLAY_NAME, n.displayName());
             }
             dir.add(e);
             r.inc("accounts.created");
             return true;
         }
 
-        final String owner = existing.getAttributeValue("acmeSource");
-        if (!SOURCE.equalsIgnoreCase(owner)) {
+        final String owner = existing.getAttributeValue(ACME_SOURCE);
+        if (!SOURCE_SALESFORCE.equalsIgnoreCase(owner)) {
             r.error("account " + n.sfId() + ": " + existing.getDN() + " is owned by '" + owner + "', not the Salesforce sync");
             return false;
         }
@@ -202,11 +216,11 @@ public class SalesforceSyncService {
             r.inc(parentChanged ? "accounts.moved" : "accounts.renamed");
             dn = p.dn();
         }
-        final String haveName = existing.getAttributeValue("displayName");
+        final String haveName = existing.getAttributeValue(DISPLAY_NAME);
         if (n.displayName() == null ? haveName != null : !n.displayName().equals(haveName)) {
             dir.modify(dn, List.of(n.displayName() == null
-                    ? new Modification(ModificationType.DELETE, "displayName")
-                    : new Modification(ModificationType.REPLACE, "displayName", n.displayName())));
+                    ? new Modification(ModificationType.DELETE, DISPLAY_NAME)
+                    : new Modification(ModificationType.REPLACE, DISPLAY_NAME, n.displayName())));
             r.inc("accounts.updated");
         } else {
             r.inc("accounts.unchanged");
@@ -218,7 +232,7 @@ public class SalesforceSyncService {
                                  final SearchResultEntry atDn,
                                  final SyncReport r) throws LDAPException {
         final var n = p.node();
-        final String otherId = atDn.getAttributeValue("acmeSalesforceId");
+        final String otherId = atDn.getAttributeValue(ACME_SALESFORCE_ID);
         if (otherId != null) {
             r.error("account " + n.sfId() + ": " + p.dn() + " already holds Salesforce record " + otherId
                     + " (two records share cn '" + n.cn() + "' under the same parent?)");
@@ -234,13 +248,13 @@ public class SalesforceSyncService {
             return false;
         }
         final List<Modification> mods = new ArrayList<>();
-        if (!atDn.hasObjectClass("acmeSyncManaged")) {
-            mods.add(new Modification(ModificationType.ADD, "objectClass", "acmeSyncManaged"));
+        if (!atDn.hasObjectClass(OC_ACME_SYNC_MANAGED)) {
+            mods.add(new Modification(ModificationType.ADD, OBJECT_CLASS, OC_ACME_SYNC_MANAGED));
         }
-        mods.add(new Modification(ModificationType.REPLACE, "acmeSalesforceId", n.sfId()));
-        mods.add(new Modification(ModificationType.REPLACE, "acmeSource", SOURCE));
+        mods.add(new Modification(ModificationType.REPLACE, ACME_SALESFORCE_ID, n.sfId()));
+        mods.add(new Modification(ModificationType.REPLACE, ACME_SOURCE, SOURCE_SALESFORCE));
         if (n.displayName() != null) {
-            mods.add(new Modification(ModificationType.REPLACE, "displayName", n.displayName()));
+            mods.add(new Modification(ModificationType.REPLACE, DISPLAY_NAME, n.displayName()));
         }
         dir.modify(p.dn(), mods);
         r.inc("accounts.adopted");
@@ -255,10 +269,10 @@ public class SalesforceSyncService {
                                 final int sourceRows, final SyncReport r)
             throws LDAPException {
         final List<SearchResultEntry> owned = dir.searchAll(base, SearchScope.SUB,
-                Filter.createANDFilter(Filter.createEqualityFilter("acmeSource", SOURCE),
-                        Filter.createPresenceFilter("acmeSalesforceId")), ACCOUNT_ATTRS);
+                Filter.createANDFilter(Filter.createEqualityFilter(ACME_SOURCE, SOURCE_SALESFORCE),
+                        Filter.createPresenceFilter(ACME_SALESFORCE_ID)), ACCOUNT_ATTRS);
         final List<SearchResultEntry> gone = owned.stream()
-                .filter(e -> !seen.contains(e.getAttributeValue("acmeSalesforceId")))
+                .filter(e -> !seen.contains(e.getAttributeValue(ACME_SALESFORCE_ID)))
                 .sorted(Comparator.comparingInt((SearchResultEntry e) -> LdapDirectory.depth(e.getDN())).reversed())
                 .toList();
         final var refusal = SafetyGuard.checkRemoval(sourceRows, owned.size(), gone.size(),
@@ -283,7 +297,7 @@ public class SalesforceSyncService {
     private static Map<String, SearchResultEntry> indexBySalesforceId(final List<SearchResultEntry> entries) {
         final Map<String, SearchResultEntry> m = new HashMap<>();
         for (final SearchResultEntry e : entries) {
-            m.put(e.getAttributeValue("acmeSalesforceId"), e);
+            m.put(e.getAttributeValue(ACME_SALESFORCE_ID), e);
         }
         return m;
     }
@@ -296,8 +310,8 @@ public class SalesforceSyncService {
 
         final Map<String, String> accountDns = new HashMap<>();
         for (final SearchResultEntry e : dir.searchAll(agencies, SearchScope.SUB,
-                Filter.createPresenceFilter("acmeSalesforceId"), "acmeSalesforceId")) {
-            accountDns.put(e.getAttributeValue("acmeSalesforceId"), e.getDN());
+                Filter.createPresenceFilter(ACME_SALESFORCE_ID), ACME_SALESFORCE_ID)) {
+            accountDns.put(e.getAttributeValue(ACME_SALESFORCE_ID), e.getDN());
         }
 
         final List<Map<String, Object>> users = salesforce.query(ag.soql());
@@ -314,10 +328,11 @@ public class SalesforceSyncService {
         mapped.warnings().forEach(r::warn);
 
         final PersonWriter writer = new PersonWriter(dir, cfg.ldap().peopleDn());
-        final var profile = new PersonWriter.Profile(SOURCE, "agent", ag.ou(),
+        final var profile = new PersonWriter.Profile(SOURCE_SALESFORCE, USER_TYPE_AGENT, ag.ou(),
                 // acmeFeatureAccess so special agents can be given feature grants by hand;
                 // the sync itself never touches acmeFeatureDN.
-                List.of("inetOrgPerson", "acmeUser", "acmeAccountAccess", "acmeFeatureAccess"), ag.passwordPolicy(),
+                List.of(OC_INET_ORG_PERSON, OC_ACME_USER, OC_ACME_ACCOUNT_ACCESS, OC_ACME_FEATURE_ACCESS),
+                ag.passwordPolicy(),
                 dn -> LdapDirectory.isUnder(dn, agencies), ag.pruneGrants(), cfg.safety().adoptUnowned());
 
         final Set<String> seen = new HashSet<>();
@@ -332,10 +347,11 @@ public class SalesforceSyncService {
 
         // Agents who are no longer returned (deactivated or filtered out in Salesforce) are locked, not deleted.
         final List<SearchResultEntry> owned = dir.searchAll(ag.ou(), SearchScope.ONE,
-                Filter.createANDFilter(Filter.createEqualityFilter("acmeSource", SOURCE),
-                        Filter.createPresenceFilter("acmeSalesforceId")), PersonWriter.READ_ATTRS);
+                Filter.createANDFilter(Filter.createEqualityFilter(ACME_SOURCE, SOURCE_SALESFORCE),
+                        Filter.createPresenceFilter(ACME_SALESFORCE_ID)), PersonWriter.READ_ATTRS);
         final List<SearchResultEntry> gone = owned.stream()
-                .filter(e -> !seen.contains(e.getAttributeValue("acmeSalesforceId")) && !e.hasAttribute("acmeDeactivated"))
+                .filter(e -> !seen.contains(e.getAttributeValue(ACME_SALESFORCE_ID))
+                        && !e.hasAttribute(ACME_DEACTIVATED))
                 .toList();
         final var refusal = SafetyGuard.checkRemoval(users.size(), owned.size(), gone.size(), cfg.safety().maxRemovePercent());
         if (refusal.isPresent()) {

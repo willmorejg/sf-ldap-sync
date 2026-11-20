@@ -1,5 +1,7 @@
 package com.acmeinsurance.ldapsync.core;
 
+import static com.acmeinsurance.ldapsync.core.Constants.CN;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -17,6 +19,7 @@ import java.util.Set;
  * cannot be placed. Pure logic: no LDAP access.
  */
 public final class AccountTreePlanner {
+    private static final String PARENT = "parent ";
 
     /** A record that has a place in the tree. */
     public record Planned(AccountNode node, String dn, String parentDn) {
@@ -70,21 +73,21 @@ public final class AccountTreePlanner {
                     }
                     final AccountNode parent = byId.get(n.parentSfId());
                     if (parent == null) {
-                        rejected.add(new Rejected(n, "parent " + n.parentSfId() + " is not in the query result"));
+                        rejected.add(new Rejected(n, PARENT + n.parentSfId() + " is not in the query result"));
                         continue;
                     }
                     if (parent.level() != level.parent()) {
-                        rejected.add(new Rejected(n, "parent " + parent.sfId() + " is a " + parent.level().label()
+                        rejected.add(new Rejected(n, PARENT + parent.sfId() + " is a " + parent.level().label()
                                 + "; a " + level.label() + " must sit under a " + level.parent().label()));
                         continue;
                     }
                     parentDn = dnById.get(parent.sfId());
                     if (parentDn == null) {
-                        rejected.add(new Rejected(n, "parent " + parent.sfId() + " was itself rejected"));
+                        rejected.add(new Rejected(n, PARENT + parent.sfId() + " was itself rejected"));
                         continue;
                     }
                 }
-                final String dn = Dns.child("cn", n.cn(), parentDn);
+                final String dn = Dns.child(CN, n.cn(), parentDn);
                 if (!usedDns.add(dn.toLowerCase(Locale.ROOT))) {
                     rejected.add(new Rejected(n, "cn '" + n.cn() + "' is already used by another record under the same parent"));
                     continue;

@@ -1,5 +1,8 @@
 package com.acmeinsurance.auth.token;
 
+import static com.acmeinsurance.auth.Constants.DIGEST_SHA_256;
+import static com.acmeinsurance.auth.Constants.KEY_ALGORITHM_RSA;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -57,16 +60,16 @@ public class SigningKeys {
             }
             generate(file);
         }
-        final RSAPrivateCrtKey priv = (RSAPrivateCrtKey) KeyFactory.getInstance("RSA")
+        final RSAPrivateCrtKey priv = (RSAPrivateCrtKey) KeyFactory.getInstance(KEY_ALGORITHM_RSA)
                 .generatePrivate(new PKCS8EncodedKeySpec(pem(Files.readString(file), "PRIVATE KEY")));
-        final PublicKey pub = KeyFactory.getInstance("RSA")
+        final PublicKey pub = KeyFactory.getInstance(KEY_ALGORITHM_RSA)
                 .generatePublic(new RSAPublicKeySpec(priv.getModulus(), priv.getPublicExponent()));
         current = publicJwk(pub);
         current.setPrivateKey(priv);
 
         published.add(publicJwk(pub));
         for (final String prev : cfg.signing().previousPublicKeyFiles().orElse(List.of())) {
-            published.add(publicJwk(KeyFactory.getInstance("RSA")
+            published.add(publicJwk(KeyFactory.getInstance(KEY_ALGORITHM_RSA)
                     .generatePublic(new X509EncodedKeySpec(pem(Files.readString(Path.of(prev)), "PUBLIC KEY")))));
         }
         jwks = new JsonWebKeySet(published).toJson(JsonWebKey.OutputControlLevel.PUBLIC_ONLY);
@@ -90,14 +93,14 @@ public class SigningKeys {
 
     private static RsaJsonWebKey publicJwk(final PublicKey pub) throws JoseException {
         final RsaJsonWebKey jwk = (RsaJsonWebKey) JsonWebKey.Factory.newJwk(pub);
-        jwk.setKeyId(jwk.calculateBase64urlEncodedThumbprint("SHA-256"));
+        jwk.setKeyId(jwk.calculateBase64urlEncodedThumbprint(DIGEST_SHA_256));
         jwk.setUse("sig");
         jwk.setAlgorithm("RS256");
         return jwk;
     }
 
     private static void generate(final Path file) throws IOException, GeneralSecurityException {
-        final KeyPairGenerator g = KeyPairGenerator.getInstance("RSA");
+        final KeyPairGenerator g = KeyPairGenerator.getInstance(KEY_ALGORITHM_RSA);
         g.initialize(3072);
         final KeyPair kp = g.generateKeyPair();
         final String body = Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))

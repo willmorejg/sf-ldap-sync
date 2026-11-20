@@ -1,5 +1,12 @@
 package com.acmeinsurance.auth;
 
+import static com.acmeinsurance.auth.Constants.ERROR_INVALID_GRANT;
+import static com.acmeinsurance.auth.Constants.ERROR_INVALID_REQUEST;
+import static com.acmeinsurance.auth.Constants.HEADER_PRAGMA;
+import static com.acmeinsurance.auth.Constants.PARAM_ERROR;
+import static com.acmeinsurance.auth.Constants.PARAM_ERROR_DESCRIPTION;
+import static com.acmeinsurance.auth.Constants.PRAGMA_NO_CACHE;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -29,11 +36,11 @@ public final class OAuthException extends RuntimeException {
     }
 
     public static OAuthException invalidRequest(final String description) {
-        return new OAuthException(400, "invalid_request", description);
+        return new OAuthException(400, ERROR_INVALID_REQUEST, description);
     }
 
     public static OAuthException invalidGrant(final String description) {
-        return new OAuthException(400, "invalid_grant", description);
+        return new OAuthException(400, ERROR_INVALID_GRANT, description);
     }
 
     public String error() {
@@ -45,14 +52,14 @@ public final class OAuthException extends RuntimeException {
         @Override
         public Response toResponse(final OAuthException e) {
             final Map<String, String> body = new LinkedHashMap<>();
-            body.put("error", e.error);
+            body.put(PARAM_ERROR, e.error);
             if (e.getMessage() != null) {
-                body.put("error_description", e.getMessage());
+                body.put(PARAM_ERROR_DESCRIPTION, e.getMessage());
             }
             final CacheControl cc = new CacheControl();
             cc.setNoStore(true);
             final Response.ResponseBuilder rb = Response.status(e.status).type(MediaType.APPLICATION_JSON_TYPE)
-                    .cacheControl(cc).header("Pragma", "no-cache").entity(body);
+                    .cacheControl(cc).header(HEADER_PRAGMA, PRAGMA_NO_CACHE).entity(body);
             if (e.basicChallenge) {
                 rb.header("WWW-Authenticate", "Basic realm=\"acmeinsurance\"");
             }

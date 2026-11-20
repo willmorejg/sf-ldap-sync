@@ -165,4 +165,9 @@ parameters (not lambda or pattern variables, not record components), private fie
 nothing extends. Exceptions: CDI normal-scoped beans (`@ApplicationScoped`) stay non-final because Quarkus
 proxies them, and `@QuarkusTest` classes stay non-final. Beans use constructor injection (a single constructor,
 no `@Inject`, as in `auth/`) so their dependencies are `private final`; don't add `@Inject` fields.
-`@Singleton`/`@Provider`/JAX-RS resource classes may be final. Keep new lines within 120 characters (22 older lines, mostly in tests, are longer).
+`@Singleton`/`@Provider`/JAX-RS resource classes may be final. Shared names in sync (LDAP attributes and object classes, acmeSource/acmeUserType values, CSV folders,
+columns and reference prefixes) live in `sync/.../core/Constants.java`, an enum with only `INSTANCE`; use
+them through static imports instead of string literals. auth has its own `auth/.../Constants.java` (same pattern:
+LDAP names, OAuth parameters, grant types and error codes, JWT claims). Where two constants share a value
+(`PARAM_PASSWORD`/`GRANT_TYPE_PASSWORD`, `PARAM_CODE`/`RESPONSE_TYPE_CODE`), pick the one that names the role.
+Login template data keys, RFC 8414 metadata keys and messages stay literals. Keep new lines within 120 characters (22 older lines, mostly in tests, are longer).

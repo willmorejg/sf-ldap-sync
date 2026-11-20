@@ -1,5 +1,26 @@
 package com.acmeinsurance.auth.token;
 
+import static com.acmeinsurance.auth.Constants.CLAIM_ACCOUNTS;
+import static com.acmeinsurance.auth.Constants.CLAIM_AUTH_TIME;
+import static com.acmeinsurance.auth.Constants.CLAIM_CLIENT_ID;
+import static com.acmeinsurance.auth.Constants.CLAIM_EMAIL;
+import static com.acmeinsurance.auth.Constants.CLAIM_FAMILY_NAME;
+import static com.acmeinsurance.auth.Constants.CLAIM_FEATURES;
+import static com.acmeinsurance.auth.Constants.CLAIM_GIVEN_NAME;
+import static com.acmeinsurance.auth.Constants.CLAIM_NAME;
+import static com.acmeinsurance.auth.Constants.CLAIM_POLICIES;
+import static com.acmeinsurance.auth.Constants.CLAIM_PREFERRED_USERNAME;
+import static com.acmeinsurance.auth.Constants.CLAIM_USER_TYPE;
+import static com.acmeinsurance.auth.Constants.GRANT_TYPE_REFRESH_TOKEN;
+import static com.acmeinsurance.auth.Constants.PARAM_ACCESS_TOKEN;
+import static com.acmeinsurance.auth.Constants.PARAM_EXPIRES_IN;
+import static com.acmeinsurance.auth.Constants.PARAM_REFRESH_EXPIRES_IN;
+import static com.acmeinsurance.auth.Constants.PARAM_REFRESH_TOKEN;
+import static com.acmeinsurance.auth.Constants.PARAM_TOKEN_TYPE;
+import static com.acmeinsurance.auth.Constants.TOKEN_TYPE_BEARER;
+import static com.acmeinsurance.auth.Constants.TYP_ACCESS_TOKEN;
+import static com.acmeinsurance.auth.Constants.TYP_REFRESH_TOKEN;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -34,8 +55,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 @ApplicationScoped
 public class TokenService {
 
-    public static final String ACCESS_TYPE = "at+jwt";
-    public static final String REFRESH_TYPE = "rt+jwt";
 
     private final AuthConfig cfg;
     private final SigningKeys keys;
@@ -54,7 +73,7 @@ public class TokenService {
                 .setAllowedClockSkewInSeconds(30)
                 .setExpectedIssuer(cfg.issuer())
                 .setExpectedAudience(cfg.issuer())
-                .setExpectedType(true, REFRESH_TYPE)
+                .setExpectedType(true, TYP_REFRESH_TOKEN)
                 .setVerificationKeyResolver(new JwksVerificationKeyResolver(keys.verificationKeys()))
                 .setJwsAlgorithmConstraints(org.jose4j.jwa.AlgorithmConstraints.ConstraintType.PERMIT,
                         AlgorithmIdentifiers.RSA_USING_SHA256)
@@ -73,15 +92,15 @@ public class TokenService {
             throw OAuthException.invalidGrant("session expired; sign in again");
         }
         try {
-            final String access = sign(accessClaims(user, client, authTime, now), ACCESS_TYPE);
-            final String refresh = sign(refreshClaims(user, client, authTime, now, refreshExp), REFRESH_TYPE);
+            final String access = sign(accessClaims(user, client, authTime, now), TYP_ACCESS_TOKEN);
+            final String refresh = sign(refreshClaims(user, client, authTime, now, refreshExp), TYP_REFRESH_TOKEN);
             final Map<String, Object> body = new LinkedHashMap<>();
-            body.put("access_token", access);
-            body.put("token_type", "Bearer");
-            body.put("expires_in", cfg.tokens().accessTtl().toSeconds());
+            body.put(PARAM_ACCESS_TOKEN, access);
+            body.put(PARAM_TOKEN_TYPE, TOKEN_TYPE_BEARER);
+            body.put(PARAM_EXPIRES_IN, cfg.tokens().accessTtl().toSeconds());
             if (issuesRefreshTokens(client)) {
-                body.put("refresh_token", refresh);
-                body.put("refresh_expires_in", Duration.between(now, refreshExp).toSeconds());
+                body.put(PARAM_REFRESH_TOKEN, refresh);
+                body.put(PARAM_REFRESH_EXPIRES_IN, Duration.between(now, refreshExp).toSeconds());
             }
             return body;
         } catch (final LDAPException e) {
@@ -96,15 +115,15 @@ public class TokenService {
      * mobile app) uses the authorization code grant alone, and signs in again.
      */
     public static boolean issuesRefreshTokens(final Client client) {
-        return client.confidential() && client.allows("refresh_token");
+        return client.confidential() && client.allows(GRANT_TYPE_REFRESH_TOKEN);
     }
 
     /** Verifies a refresh token's signature, type, issuer, audience and expiry. */
     public Refresh verifyRefresh(final String token) {
         try {
             final JwtClaims c = refreshConsumer.processToClaims(token);
-            return new Refresh(c.getSubject(), c.getStringClaimValue("client_id"),
-                    Instant.ofEpochSecond(c.getClaimValue("auth_time", Long.class)));
+            return new Refresh(c.getSubject(), c.getStringClaimValue(CLAIM_CLIENT_ID),
+                    Instant.ofEpochSecond(c.getClaimValue(CLAIM_AUTH_TIME, Long.class)));
         } catch (final InvalidJwtException | MalformedClaimException | RuntimeException e) {
             throw OAuthException.invalidGrant("invalid refresh token");
         }
@@ -114,21 +133,21 @@ public class TokenService {
                            final Instant now) throws LDAPException {
         final JwtClaims c = base(user, client, authTime, now, now.plus(cfg.tokens().accessTtl()));
         c.setAudience(cfg.audience());
-        c.setStringClaim("preferred_username", user.uid());
-        claim(c, "name", user.name());
-        claim(c, "given_name", user.givenName());
-        claim(c, "family_name", user.familyName());
-        claim(c, "email", user.email());
-        claim(c, "user_type", user.userType());
+        c.setStringClaim(CLAIM_PREFERRED_USERNAME, user.uid());
+        claim(c, CLAIM_NAME, user.name());
+        claim(c, CLAIM_GIVEN_NAME, user.givenName());
+        claim(c, CLAIM_FAMILY_NAME, user.familyName());
+        claim(c, CLAIM_EMAIL, user.email());
+        claim(c, CLAIM_USER_TYPE, user.userType());
         final String type = user.userType();
         if (type != null && cfg.claims().featuresFor().contains(type)) {
-            c.setClaim("features", directory.features(user));
+            c.setClaim(CLAIM_FEATURES, directory.features(user));
         }
         if (type != null && cfg.claims().accountsFor().contains(type)) {
-            c.setClaim("accounts", directory.accounts(user).asClaim());
+            c.setClaim(CLAIM_ACCOUNTS, directory.accounts(user).asClaim());
         }
         if (type != null && cfg.claims().policiesFor().contains(type)) {
-            c.setClaim("policies", user.policyNumbers());
+            c.setClaim(CLAIM_POLICIES, user.policyNumbers());
         }
         return c;
     }
@@ -149,8 +168,8 @@ public class TokenService {
         c.setNotBefore(NumericDate.fromSeconds(now.getEpochSecond()));
         c.setExpirationTime(NumericDate.fromSeconds(exp.getEpochSecond()));
         c.setJwtId(UUID.randomUUID().toString());
-        c.setStringClaim("client_id", client.clientId());
-        c.setClaim("auth_time", authTime.getEpochSecond());
+        c.setStringClaim(CLAIM_CLIENT_ID, client.clientId());
+        c.setClaim(CLAIM_AUTH_TIME, authTime.getEpochSecond());
         return c;
     }
 

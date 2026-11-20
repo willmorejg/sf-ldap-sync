@@ -1,5 +1,7 @@
 package com.acmeinsurance.auth.token;
 
+import static com.acmeinsurance.auth.Constants.DIGEST_SHA_256;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -22,7 +24,7 @@ public final class Pkce {
     public static String challenge(final String verifier) {
         try {
             final byte[] hash =
-                    MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII));
+                    MessageDigest.getInstance(DIGEST_SHA_256).digest(verifier.getBytes(StandardCharsets.US_ASCII));
             return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
         } catch (final NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);

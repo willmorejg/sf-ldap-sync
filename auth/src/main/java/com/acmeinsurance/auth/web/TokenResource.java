@@ -1,5 +1,23 @@
 package com.acmeinsurance.auth.web;
 
+import static com.acmeinsurance.auth.Constants.ERROR_INVALID_CLIENT;
+import static com.acmeinsurance.auth.Constants.ERROR_UNAUTHORIZED_CLIENT;
+import static com.acmeinsurance.auth.Constants.ERROR_UNSUPPORTED_GRANT_TYPE;
+import static com.acmeinsurance.auth.Constants.GRANT_TYPE_AUTHORIZATION_CODE;
+import static com.acmeinsurance.auth.Constants.GRANT_TYPE_PASSWORD;
+import static com.acmeinsurance.auth.Constants.GRANT_TYPE_REFRESH_TOKEN;
+import static com.acmeinsurance.auth.Constants.HEADER_PRAGMA;
+import static com.acmeinsurance.auth.Constants.PARAM_CLIENT_ID;
+import static com.acmeinsurance.auth.Constants.PARAM_CLIENT_SECRET;
+import static com.acmeinsurance.auth.Constants.PARAM_CODE;
+import static com.acmeinsurance.auth.Constants.PARAM_CODE_VERIFIER;
+import static com.acmeinsurance.auth.Constants.PARAM_GRANT_TYPE;
+import static com.acmeinsurance.auth.Constants.PARAM_PASSWORD;
+import static com.acmeinsurance.auth.Constants.PARAM_REDIRECT_URI;
+import static com.acmeinsurance.auth.Constants.PARAM_REFRESH_TOKEN;
+import static com.acmeinsurance.auth.Constants.PARAM_USERNAME;
+import static com.acmeinsurance.auth.Constants.PRAGMA_NO_CACHE;
+
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -82,30 +100,30 @@ public final class TokenResource {
             }
         }
         final Client client = authenticateClient(authorization, form);
-        final String grantType = required(form, "grant_type");
+        final String grantType = required(form, PARAM_GRANT_TYPE);
         if (!client.allows(grantType)) {
-            if (!grantType.equals("authorization_code") && !grantType.equals("password")
-                    && !grantType.equals("refresh_token")) {
-                throw new OAuthException(400, "unsupported_grant_type", null);
+            if (!grantType.equals(GRANT_TYPE_AUTHORIZATION_CODE) && !grantType.equals(GRANT_TYPE_PASSWORD)
+                    && !grantType.equals(GRANT_TYPE_REFRESH_TOKEN)) {
+                throw new OAuthException(400, ERROR_UNSUPPORTED_GRANT_TYPE, null);
             }
-            throw new OAuthException(400, "unauthorized_client", "client may not use " + grantType);
+            throw new OAuthException(400, ERROR_UNAUTHORIZED_CLIENT, "client may not use " + grantType);
         }
         final Map<String, Object> body = switch (grantType) {
-            case "authorization_code" -> authorizationCode(client, form);
-            case "password" -> password(client, form);
-            case "refresh_token" -> refresh(client, form);
-            default -> throw new OAuthException(400, "unsupported_grant_type", null);
+            case GRANT_TYPE_AUTHORIZATION_CODE -> authorizationCode(client, form);
+            case GRANT_TYPE_PASSWORD -> password(client, form);
+            case GRANT_TYPE_REFRESH_TOKEN -> refresh(client, form);
+            default -> throw new OAuthException(400, ERROR_UNSUPPORTED_GRANT_TYPE, null);
         };
         final CacheControl cc = new CacheControl();
         cc.setNoStore(true);
-        return Response.ok(body).cacheControl(cc).header("Pragma", "no-cache").build();
+        return Response.ok(body).cacheControl(cc).header(HEADER_PRAGMA, PRAGMA_NO_CACHE).build();
     }
 
     private Map<String, Object> authorizationCode(final Client client, final MultivaluedMap<String, String> form)
             throws LDAPException {
-        final String codeValue = required(form, "code");
-        final String redirectUri = required(form, "redirect_uri");
-        final String verifier = required(form, "code_verifier");
+        final String codeValue = required(form, PARAM_CODE);
+        final String redirectUri = required(form, PARAM_REDIRECT_URI);
+        final String verifier = required(form, PARAM_CODE_VERIFIER);
         final AuthorizationStore.Code code = store.takeCode(codeValue);
         if (code == null || !code.clientId().equals(client.clientId())) {
             throw OAuthException.invalidGrant("invalid or expired code");
@@ -123,10 +141,10 @@ public final class TokenResource {
     private Map<String, Object> password(final Client client,
                                          final MultivaluedMap<String, String> form) throws LDAPException {
         if (!client.confidential()) {
-            throw new OAuthException(400, "unauthorized_client", "the password grant needs a confidential client");
+            throw new OAuthException(400, ERROR_UNAUTHORIZED_CLIENT, "the password grant needs a confidential client");
         }
-        final String username = required(form, "username");
-        final String password = required(form, "password");
+        final String username = required(form, PARAM_USERNAME);
+        final String password = required(form, PARAM_PASSWORD);
         final User user = directory.findByUsername(username);
         if (user == null || user.blocked()) {
             throw OAuthException.invalidGrant("invalid username or password");
@@ -147,9 +165,10 @@ public final class TokenResource {
     private Map<String, Object> refresh(final Client client,
                                         final MultivaluedMap<String, String> form) throws LDAPException {
         if (!TokenService.issuesRefreshTokens(client)) {
-            throw new OAuthException(400, "unauthorized_client", "refresh tokens are for confidential clients only");
+            throw new OAuthException(400, ERROR_UNAUTHORIZED_CLIENT,
+                    "refresh tokens are for confidential clients only");
         }
-        final TokenService.Refresh r = tokens.verifyRefresh(required(form, "refresh_token"));
+        final TokenService.Refresh r = tokens.verifyRefresh(required(form, PARAM_REFRESH_TOKEN));
         if (!client.clientId().equals(r.clientId())) {
             throw OAuthException.invalidGrant("refresh token was issued to another client");
         }
@@ -174,8 +193,8 @@ public final class TokenResource {
      */
     private Client authenticateClient(final String authorization,
                                       final MultivaluedMap<String, String> form) throws LDAPException {
-        String id = form.getFirst("client_id");
-        String secret = form.getFirst("client_secret");
+        String id = form.getFirst(PARAM_CLIENT_ID);
+        String secret = form.getFirst(PARAM_CLIENT_SECRET);
         final boolean basic = authorization != null && authorization.regionMatches(true, 0, "Basic ", 0, 6);
         if (basic) {
             if (secret != null) {
@@ -186,11 +205,11 @@ public final class TokenResource {
                 decoded = new String(Base64.getDecoder().decode(authorization.substring(6).trim()),
                         StandardCharsets.UTF_8);
             } catch (final IllegalArgumentException e) {
-                throw new OAuthException(401, "invalid_client", null, true);
+                throw new OAuthException(401, ERROR_INVALID_CLIENT, null, true);
             }
             final int colon = decoded.indexOf(':');
             if (colon < 0) {
-                throw new OAuthException(401, "invalid_client", null, true);
+                throw new OAuthException(401, ERROR_INVALID_CLIENT, null, true);
             }
             final String basicId = URLDecoder.decode(decoded.substring(0, colon), StandardCharsets.UTF_8);
             if (id != null && !id.equals(basicId)) {
@@ -200,18 +219,18 @@ public final class TokenResource {
             secret = URLDecoder.decode(decoded.substring(colon + 1), StandardCharsets.UTF_8);
         }
         if (id == null || id.isBlank()) {
-            throw new OAuthException(401, "invalid_client", "client authentication required", true);
+            throw new OAuthException(401, ERROR_INVALID_CLIENT, "client authentication required", true);
         }
         final Client client = directory.findClient(id);
         if (client == null) {
-            throw new OAuthException(401, "invalid_client", null, basic);
+            throw new OAuthException(401, ERROR_INVALID_CLIENT, null, basic);
         }
         if (client.confidential()) {
             if (!directory.authenticateClient(client, secret)) {
-                throw new OAuthException(401, "invalid_client", null, basic);
+                throw new OAuthException(401, ERROR_INVALID_CLIENT, null, basic);
             }
         } else if (secret != null && !secret.isEmpty()) {
-            throw new OAuthException(401, "invalid_client", "public client has no secret", basic);
+            throw new OAuthException(401, ERROR_INVALID_CLIENT, "public client has no secret", basic);
         }
         return client;
     }

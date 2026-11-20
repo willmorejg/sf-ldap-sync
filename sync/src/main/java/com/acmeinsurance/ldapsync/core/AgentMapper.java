@@ -1,5 +1,9 @@
 package com.acmeinsurance.ldapsync.core;
 
+import static com.acmeinsurance.ldapsync.core.Constants.CN;
+import static com.acmeinsurance.ldapsync.core.Constants.GIVEN_NAME;
+import static com.acmeinsurance.ldapsync.core.Constants.SN;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -74,13 +78,13 @@ public final class AgentMapper {
                 final String v = Records.path(r, field);
                 attrs.put(ldapAttr, v == null ? List.of() : List.of(v));
             });
-            if (attrs.getOrDefault("sn", List.of()).isEmpty()) {
-                attrs.put("sn", List.of(uid));
+            if (attrs.getOrDefault(SN, List.of()).isEmpty()) {
+                attrs.put(SN, List.of(uid));
             }
-            if (attrs.getOrDefault("cn", List.of()).isEmpty()) {
-                final String given = first(attrs.get("givenName"));
-                final String sn = first(attrs.get("sn"));
-                attrs.put("cn", List.of(given == null ? sn : given + " " + sn));
+            if (attrs.getOrDefault(CN, List.of()).isEmpty()) {
+                final String given = first(attrs.get(GIVEN_NAME));
+                final String sn = first(attrs.get(SN));
+                attrs.put(CN, List.of(given == null ? sn : given + " " + sn));
             }
 
             final Set<String> accountIds = new LinkedHashSet<>();

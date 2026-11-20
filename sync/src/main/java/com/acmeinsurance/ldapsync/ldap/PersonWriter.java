@@ -1,5 +1,25 @@
 package com.acmeinsurance.ldapsync.ldap;
 
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_ACCOUNT_DN;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_DEACTIVATED;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_FEATURE_DN;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_POLICY_NUMBER;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_SALESFORCE_ID;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_SOURCE;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_USER_TYPE;
+import static com.acmeinsurance.ldapsync.core.Constants.CN;
+import static com.acmeinsurance.ldapsync.core.Constants.GIVEN_NAME;
+import static com.acmeinsurance.ldapsync.core.Constants.OBJECT_CLASS;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_SYNC_MANAGED;
+import static com.acmeinsurance.ldapsync.core.Constants.PERMANENT_LOCK;
+import static com.acmeinsurance.ldapsync.core.Constants.PWD_ACCOUNT_LOCKED_TIME;
+import static com.acmeinsurance.ldapsync.core.Constants.PWD_POLICY_SUBENTRY;
+import static com.acmeinsurance.ldapsync.core.Constants.SN;
+import static com.acmeinsurance.ldapsync.core.Constants.SOURCE_CSV;
+import static com.acmeinsurance.ldapsync.core.Constants.SOURCE_CSV_LEGACY_PREFIX;
+import static com.acmeinsurance.ldapsync.core.Constants.SOURCE_MANUAL;
+import static com.acmeinsurance.ldapsync.core.Constants.UID;
+
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -36,11 +56,9 @@ import com.unboundid.ldap.sdk.SearchScope;
 public final class PersonWriter {
 
     /** Attributes read from existing entries; pwdAccountLockedTime is operational. */
-    public static final String[] READ_ATTRS = {"*", "pwdAccountLockedTime"};
-    /** ppolicy value meaning "locked until an administrator unlocks". */
-    public static final String PERMANENT_LOCK = "000001010000Z";
+    public static final String[] READ_ATTRS = {"*", PWD_ACCOUNT_LOCKED_TIME};
 
-    private static final Set<String> REQUIRED_ATTRS = Set.of("cn", "sn");
+    private static final Set<String> REQUIRED_ATTRS = Set.of(CN, SN);
     private static final DateTimeFormatter GENERALIZED_TIME =
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss'Z'").withZone(ZoneOffset.UTC);
 
@@ -86,7 +104,7 @@ public final class PersonWriter {
 
     /** Locks an entry the source no longer lists (no-op if already deactivated). */
     public void deactivate(final SearchResultEntry e, final Profile p, final SyncReport r) throws LDAPException {
-        if (e.hasAttribute("acmeDeactivated")) {
+        if (e.hasAttribute(ACME_DEACTIVATED)) {
             return;
         }
         dir.modify(e.getDN(), lockMods());
@@ -96,13 +114,13 @@ public final class PersonWriter {
     private Located locate(final PersonSpec spec, final Profile p, final SyncReport r) throws LDAPException {
         if (spec.sfId() != null) {
             final SearchResultEntry bySf = dir.findOne(p.ouDn(), SearchScope.ONE,
-                    Filter.createEqualityFilter("acmeSalesforceId", spec.sfId()), READ_ATTRS);
+                    Filter.createEqualityFilter(ACME_SALESFORCE_ID, spec.sfId()), READ_ATTRS);
             if (bySf != null) {
                 return checkOwner(bySf, spec, p, r);
             }
         }
         final SearchResultEntry byUid = dir.findOne(peopleDn, SearchScope.SUB,
-                Filter.createEqualityFilter("uid", spec.uid()), READ_ATTRS);
+                Filter.createEqualityFilter(UID, spec.uid()), READ_ATTRS);
         if (byUid == null) {
             return new Located(null, true);
         }
@@ -110,7 +128,7 @@ public final class PersonWriter {
             r.error(spec.uid() + ": uid is already used by " + byUid.getDN());
             return new Located(null, false);
         }
-        final String otherSf = byUid.getAttributeValue("acmeSalesforceId");
+        final String otherSf = byUid.getAttributeValue(ACME_SALESFORCE_ID);
         if (spec.sfId() != null && otherSf != null && !otherSf.equals(spec.sfId())) {
             r.error(spec.uid() + ": uid already belongs to Salesforce user " + otherSf + ", not " + spec.sfId());
             return new Located(null, false);
@@ -118,8 +136,6 @@ public final class PersonWriter {
         return checkOwner(byUid, spec, p, r);
     }
 
-    /** acmeSource of entries made by hand; treated exactly like no acmeSource at all. */
-    public static final String MANUAL = "manual";
 
     /**
      * Whether {@code source} owns an entry marked {@code owner}. The CSV feeds used
@@ -131,15 +147,16 @@ public final class PersonWriter {
             return false;
         }
         return source.equalsIgnoreCase(owner)
-                || "csv".equalsIgnoreCase(source) && owner.toLowerCase(Locale.ROOT).startsWith("csv-");
+                || SOURCE_CSV.equalsIgnoreCase(source)
+                        && owner.toLowerCase(Locale.ROOT).startsWith(SOURCE_CSV_LEGACY_PREFIX);
     }
 
     private Located checkOwner(final SearchResultEntry e, final PersonSpec spec, final Profile p, final SyncReport r) {
-        String owner = e.getAttributeValue("acmeSource");
+        String owner = e.getAttributeValue(ACME_SOURCE);
         if (owns(p.source(), owner)) {
             return new Located(e, true);
         }
-        if (MANUAL.equalsIgnoreCase(owner)) {
+        if (SOURCE_MANUAL.equalsIgnoreCase(owner)) {
             owner = null; // made by hand, marked as such
         }
         if (owner == null && p.adoptUnowned()) {
@@ -157,41 +174,41 @@ public final class PersonWriter {
             r.inc(key(p, "skippedInactive"));
             return;
         }
-        final String dn = new DN(new RDN("uid", spec.uid()), new DN(p.ouDn())).toString();
+        final String dn = new DN(new RDN(UID, spec.uid()), new DN(p.ouDn())).toString();
         final Entry e = new Entry(dn);
         final List<String> classes = new ArrayList<>(p.objectClasses());
-        classes.add("acmeSyncManaged");
-        e.addAttribute(new Attribute("objectClass", classes));
-        e.addAttribute("uid", spec.uid());
-        e.addAttribute("acmeUserType", p.userType());
-        e.addAttribute("acmeSource", p.source());
+        classes.add(OC_ACME_SYNC_MANAGED);
+        e.addAttribute(new Attribute(OBJECT_CLASS, classes));
+        e.addAttribute(UID, spec.uid());
+        e.addAttribute(ACME_USER_TYPE, p.userType());
+        e.addAttribute(ACME_SOURCE, p.source());
         if (spec.sfId() != null) {
-            e.addAttribute("acmeSalesforceId", spec.sfId());
+            e.addAttribute(ACME_SALESFORCE_ID, spec.sfId());
         }
         spec.attributes().forEach((name, values) -> {
             if (!values.isEmpty()) {
                 e.addAttribute(new Attribute(name, values));
             }
         });
-        if (!e.hasAttribute("sn")) {
-            e.addAttribute("sn", spec.uid());
+        if (!e.hasAttribute(SN)) {
+            e.addAttribute(SN, spec.uid());
         }
-        if (!e.hasAttribute("cn")) {
-            final String given = e.getAttributeValue("givenName");
-            final String sn = e.getAttributeValue("sn");
-            e.addAttribute("cn", given == null ? sn : given + " " + sn);
+        if (!e.hasAttribute(CN)) {
+            final String given = e.getAttributeValue(GIVEN_NAME);
+            final String sn = e.getAttributeValue(SN);
+            e.addAttribute(CN, given == null ? sn : given + " " + sn);
         }
         if (spec.accountDns() != null && !spec.accountDns().isEmpty()) {
-            e.addAttribute(new Attribute("acmeAccountDN", spec.accountDns()));
+            e.addAttribute(new Attribute(ACME_ACCOUNT_DN, spec.accountDns()));
         }
         if (spec.policyNumbers() != null && !spec.policyNumbers().isEmpty()) {
-            e.addAttribute(new Attribute("acmePolicyNumber", spec.policyNumbers()));
+            e.addAttribute(new Attribute(ACME_POLICY_NUMBER, spec.policyNumbers()));
         }
         if (spec.featureDns() != null && !spec.featureDns().isEmpty()) {
-            e.addAttribute(new Attribute("acmeFeatureDN", spec.featureDns()));
+            e.addAttribute(new Attribute(ACME_FEATURE_DN, spec.featureDns()));
         }
         if (p.passwordPolicyDn() != null) {
-            e.addAttribute("pwdPolicySubentry", p.passwordPolicyDn());
+            e.addAttribute(PWD_POLICY_SUBENTRY, p.passwordPolicyDn());
         }
         dir.add(e);
         r.inc(key(p, "created"));
@@ -200,7 +217,7 @@ public final class PersonWriter {
     private void update(final SearchResultEntry e, final PersonSpec spec, final Profile p,
                         final SyncReport r) throws LDAPException {
         String dn = e.getDN();
-        final RDN wanted = new RDN("uid", spec.uid());
+        final RDN wanted = new RDN(UID, spec.uid());
         if (!new DN(dn).getRDN().equals(wanted)) {
             dir.modifyDn(dn, wanted.toString(), null);
             if (!dir.isDryRun()) {
@@ -211,37 +228,37 @@ public final class PersonWriter {
 
         final List<Modification> mods = new ArrayList<>();
         final List<String> classes = new ArrayList<>(p.objectClasses());
-        classes.add("acmeSyncManaged");
+        classes.add(OC_ACME_SYNC_MANAGED);
         for (final String oc : classes) {
             if (!e.hasObjectClass(oc)) {
-                mods.add(new Modification(ModificationType.ADD, "objectClass", oc));
+                mods.add(new Modification(ModificationType.ADD, OBJECT_CLASS, oc));
             }
         }
-        replaceIfDifferent(mods, e, "acmeSource", List.of(p.source()));
-        replaceIfDifferent(mods, e, "acmeUserType", List.of(p.userType()));
+        replaceIfDifferent(mods, e, ACME_SOURCE, List.of(p.source()));
+        replaceIfDifferent(mods, e, ACME_USER_TYPE, List.of(p.userType()));
         if (spec.sfId() != null) {
-            replaceIfDifferent(mods, e, "acmeSalesforceId", List.of(spec.sfId()));
+            replaceIfDifferent(mods, e, ACME_SALESFORCE_ID, List.of(spec.sfId()));
         }
         spec.attributes().forEach((name, values) -> replaceIfDifferent(mods, e, name, values));
 
         if (spec.accountDns() != null) {
-            addDiff(mods, "acmeAccountDN", ValueDiff.diff(values(e, "acmeAccountDN"), spec.accountDns(),
+            addDiff(mods, ACME_ACCOUNT_DN, ValueDiff.diff(values(e, ACME_ACCOUNT_DN), spec.accountDns(),
                     p.grantScope(), p.pruneGrants(), LdapDirectory::normalize));
         }
         if (spec.featureDns() != null) { // only CSV feeds send these; they own all of an entry's feature grants
-            addDiff(mods, "acmeFeatureDN", ValueDiff.diff(values(e, "acmeFeatureDN"), spec.featureDns(),
+            addDiff(mods, ACME_FEATURE_DN, ValueDiff.diff(values(e, ACME_FEATURE_DN), spec.featureDns(),
                     v -> true, true, LdapDirectory::normalize));
         }
         if (spec.policyNumbers() != null) {
-            addDiff(mods, "acmePolicyNumber", ValueDiff.diff(values(e, "acmePolicyNumber"), spec.policyNumbers(),
+            addDiff(mods, ACME_POLICY_NUMBER, ValueDiff.diff(values(e, ACME_POLICY_NUMBER), spec.policyNumbers(),
                     v -> true, true, v -> v.trim().toLowerCase(Locale.ROOT)));
         }
 
-        final boolean deactivated = e.hasAttribute("acmeDeactivated");
+        final boolean deactivated = e.hasAttribute(ACME_DEACTIVATED);
         if (spec.active() && deactivated) {
-            mods.add(new Modification(ModificationType.DELETE, "acmeDeactivated"));
-            if (PERMANENT_LOCK.equals(e.getAttributeValue("pwdAccountLockedTime"))) {
-                mods.add(new Modification(ModificationType.DELETE, "pwdAccountLockedTime"));
+            mods.add(new Modification(ModificationType.DELETE, ACME_DEACTIVATED));
+            if (PERMANENT_LOCK.equals(e.getAttributeValue(PWD_ACCOUNT_LOCKED_TIME))) {
+                mods.add(new Modification(ModificationType.DELETE, PWD_ACCOUNT_LOCKED_TIME));
             }
             r.inc(key(p, "reactivated"));
         } else if (!spec.active() && !deactivated) {
@@ -259,8 +276,8 @@ public final class PersonWriter {
 
     private static List<Modification> lockMods() {
         return List.of(
-                new Modification(ModificationType.REPLACE, "pwdAccountLockedTime", PERMANENT_LOCK),
-                new Modification(ModificationType.REPLACE, "acmeDeactivated", GENERALIZED_TIME.format(Instant.now())));
+                new Modification(ModificationType.REPLACE, PWD_ACCOUNT_LOCKED_TIME, PERMANENT_LOCK),
+                new Modification(ModificationType.REPLACE, ACME_DEACTIVATED, GENERALIZED_TIME.format(Instant.now())));
     }
 
     private static void replaceIfDifferent(final List<Modification> mods, final Entry e, final String name,

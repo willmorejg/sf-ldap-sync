@@ -1,5 +1,7 @@
 package com.acmeinsurance.ldapsync.ldap;
 
+import static com.acmeinsurance.ldapsync.core.Constants.LDAPS_SCHEME;
+
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,6 +26,8 @@ import com.unboundid.ldap.sdk.SearchRequest;
 import com.unboundid.ldap.sdk.SearchResult;
 import com.unboundid.ldap.sdk.SearchResultEntry;
 import com.unboundid.ldap.sdk.SearchScope;
+import com.unboundid.ldap.sdk.SimpleBindRequest;
+import com.unboundid.ldap.sdk.SingleServerSet;
 import com.unboundid.ldap.sdk.controls.SimplePagedResultsControl;
 import com.unboundid.util.ssl.HostNameSSLSocketVerifier;
 import com.unboundid.util.ssl.JVMDefaultTrustManager;
@@ -50,11 +54,13 @@ public final class LdapDirectory implements AutoCloseable {
         options.setConnectTimeoutMillis(10_000);
         options.setResponseTimeoutMillis(60_000);
         options.setSSLSocketVerifier(new HostNameSSLSocketVerifier(true));
-        final SocketFactory sf = "ldaps".equalsIgnoreCase(u.getScheme())
+        final SocketFactory sf = LDAPS_SCHEME.equalsIgnoreCase(u.getScheme())
                 ? new SSLUtil(JVMDefaultTrustManager.getInstance()).createSSLSocketFactory()
                 : SocketFactory.getDefault();
-        final LDAPConnection first = new LDAPConnection(sf, options, u.getHost(), u.getPort(), bindDn, bindPassword);
-        this.pool = new LDAPConnectionPool(first, 1, Math.max(1, poolSize));
+        // The pool opens, binds and closes its own connections (and re-binds any it
+        // re-establishes), so no connection is ever left open if setup fails.
+        this.pool = new LDAPConnectionPool(new SingleServerSet(u.getHost(), u.getPort(), sf, options),
+                new SimpleBindRequest(bindDn, bindPassword), 1, Math.max(1, poolSize));
         this.pool.setRetryFailedOperationsDueToInvalidConnections(true);
         this.dryRun = dryRun;
         if (dryRun) {

@@ -1,5 +1,24 @@
 package com.acmeinsurance.auth.web;
 
+import static com.acmeinsurance.auth.Constants.ERROR_INVALID_REQUEST;
+import static com.acmeinsurance.auth.Constants.ERROR_TEMPORARILY_UNAVAILABLE;
+import static com.acmeinsurance.auth.Constants.ERROR_UNAUTHORIZED_CLIENT;
+import static com.acmeinsurance.auth.Constants.ERROR_UNSUPPORTED_RESPONSE_TYPE;
+import static com.acmeinsurance.auth.Constants.GRANT_TYPE_AUTHORIZATION_CODE;
+import static com.acmeinsurance.auth.Constants.PARAM_CLIENT_ID;
+import static com.acmeinsurance.auth.Constants.PARAM_CODE;
+import static com.acmeinsurance.auth.Constants.PARAM_CODE_CHALLENGE;
+import static com.acmeinsurance.auth.Constants.PARAM_CODE_CHALLENGE_METHOD;
+import static com.acmeinsurance.auth.Constants.PARAM_ERROR;
+import static com.acmeinsurance.auth.Constants.PARAM_ERROR_DESCRIPTION;
+import static com.acmeinsurance.auth.Constants.PARAM_PASSWORD;
+import static com.acmeinsurance.auth.Constants.PARAM_REDIRECT_URI;
+import static com.acmeinsurance.auth.Constants.PARAM_RESPONSE_TYPE;
+import static com.acmeinsurance.auth.Constants.PARAM_STATE;
+import static com.acmeinsurance.auth.Constants.PARAM_USERNAME;
+import static com.acmeinsurance.auth.Constants.PKCE_METHOD_S256;
+import static com.acmeinsurance.auth.Constants.RESPONSE_TYPE_CODE;
+
 import java.net.URI;
 import java.time.Instant;
 
@@ -75,17 +94,17 @@ public final class AuthorizeResource {
             content = @Content(mediaType = MediaType.TEXT_HTML))
     public Response authorize(
             @Parameter(in = ParameterIn.QUERY, required = true, description = "Must be code")
-            @QueryParam("response_type") final String responseType,
+            @QueryParam(PARAM_RESPONSE_TYPE) final String responseType,
             @Parameter(in = ParameterIn.QUERY, required = true)
-            @QueryParam("client_id") final String clientId,
+            @QueryParam(PARAM_CLIENT_ID) final String clientId,
             @Parameter(in = ParameterIn.QUERY, required = true, description = "One of the client's registered redirect URIs")
-            @QueryParam("redirect_uri") final String redirectUri,
+            @QueryParam(PARAM_REDIRECT_URI) final String redirectUri,
             @Parameter(in = ParameterIn.QUERY, description = "Opaque value returned unchanged; use it against CSRF")
-            @QueryParam("state") final String state,
+            @QueryParam(PARAM_STATE) final String state,
             @Parameter(in = ParameterIn.QUERY, required = true, description = "BASE64URL(SHA-256(code_verifier))")
-            @QueryParam("code_challenge") final String challenge,
+            @QueryParam(PARAM_CODE_CHALLENGE) final String challenge,
             @Parameter(in = ParameterIn.QUERY, required = true, description = "Must be S256")
-            @QueryParam("code_challenge_method") final String challengeMethod) throws LDAPException {
+            @QueryParam(PARAM_CODE_CHALLENGE_METHOD) final String challengeMethod) throws LDAPException {
         // Until the client and redirect URI are known good, errors are shown, never redirected.
         final Client client = directory.findClient(clientId);
         if (client == null) {
@@ -94,18 +113,18 @@ public final class AuthorizeResource {
         if (redirectUri == null || !client.redirectUris().contains(redirectUri)) {
             return errorPage("The application's redirect address is not registered.");
         }
-        if (!"code".equals(responseType)) {
-            return redirectError(redirectUri, state, "unsupported_response_type", null);
+        if (!RESPONSE_TYPE_CODE.equals(responseType)) {
+            return redirectError(redirectUri, state, ERROR_UNSUPPORTED_RESPONSE_TYPE, null);
         }
-        if (!client.allows("authorization_code")) {
-            return redirectError(redirectUri, state, "unauthorized_client", null);
+        if (!client.allows(GRANT_TYPE_AUTHORIZATION_CODE)) {
+            return redirectError(redirectUri, state, ERROR_UNAUTHORIZED_CLIENT, null);
         }
-        if (!"S256".equals(challengeMethod) || !Pkce.wellFormed(challenge)) {
-            return redirectError(redirectUri, state, "invalid_request", "PKCE with S256 is required");
+        if (!PKCE_METHOD_S256.equals(challengeMethod) || !Pkce.wellFormed(challenge)) {
+            return redirectError(redirectUri, state, ERROR_INVALID_REQUEST, "PKCE with S256 is required");
         }
         final String id = store.newLogin(client.clientId(), redirectUri, state, challenge);
         if (id == null) {
-            return redirectError(redirectUri, state, "temporarily_unavailable", null);
+            return redirectError(redirectUri, state, ERROR_TEMPORARILY_UNAVAILABLE, null);
         }
         return page(client, id, null, null, false);
     }
@@ -120,8 +139,8 @@ public final class AuthorizeResource {
             content = @Content(mediaType = MediaType.TEXT_HTML))
     @APIResponse(responseCode = "303", description = "Signed in: redirect to redirect_uri with code and state")
     public Response submit(@FormParam("request_id") final String requestId,
-                           @FormParam("username") final String username,
-                           @FormParam("password") String password,
+                           @FormParam(PARAM_USERNAME) final String username,
+                           @FormParam(PARAM_PASSWORD) String password,
                            @FormParam("new_password") final String newPassword,
                            @FormParam("confirm_password") final String confirmPassword) throws LDAPException {
         final PendingLogin pending = store.login(requestId);
@@ -173,13 +192,13 @@ public final class AuthorizeResource {
         }
         final String code = store.newCode(pending, fresh.id(), Instant.now());
         if (code == null) {
-            return redirectError(pending.redirectUri(), pending.state(), "temporarily_unavailable", null);
+            return redirectError(pending.redirectUri(), pending.state(), ERROR_TEMPORARILY_UNAVAILABLE, null);
         }
         store.finishLogin(requestId);
         LOG.infof("authorization code: %s for client %s", fresh.uid(), client.clientId());
-        final UriBuilder ub = UriBuilder.fromUri(pending.redirectUri()).queryParam("code", code);
+        final UriBuilder ub = UriBuilder.fromUri(pending.redirectUri()).queryParam(PARAM_CODE, code);
         if (pending.state() != null) {
-            ub.queryParam("state", pending.state());
+            ub.queryParam(PARAM_STATE, pending.state());
         }
         return Response.seeOther(ub.build()).cacheControl(noStore()).build();
     }
@@ -202,12 +221,12 @@ public final class AuthorizeResource {
 
     private static Response redirectError(final String redirectUri, final String state, final String code,
                                           final String description) {
-        final UriBuilder ub = UriBuilder.fromUri(redirectUri).queryParam("error", code);
+        final UriBuilder ub = UriBuilder.fromUri(redirectUri).queryParam(PARAM_ERROR, code);
         if (description != null) {
-            ub.queryParam("error_description", description);
+            ub.queryParam(PARAM_ERROR_DESCRIPTION, description);
         }
         if (state != null) {
-            ub.queryParam("state", state);
+            ub.queryParam(PARAM_STATE, state);
         }
         final URI target = ub.build();
         return Response.seeOther(target).cacheControl(noStore()).build();

@@ -1,12 +1,16 @@
 package com.acmeinsurance.ldapsync.core;
 
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_AGENCY_ACCOUNT;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_AGREEMENT_ACCOUNT;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_BOOK_ACCOUNT;
+
 import java.util.Locale;
 
 /** The three Salesforce account levels, in parent-to-child order. */
 public enum AccountLevel {
-    AGENCY("acmeAgencyAccount", null),
-    AGREEMENT("acmeAgreementAccount", AGENCY),
-    BOOK("acmeBookAccount", AGREEMENT);
+    AGENCY(OC_ACME_AGENCY_ACCOUNT, null),
+    AGREEMENT(OC_ACME_AGREEMENT_ACCOUNT, AGENCY),
+    BOOK(OC_ACME_BOOK_ACCOUNT, AGREEMENT);
 
     private final String objectClass;
     private final AccountLevel parent;

@@ -22,6 +22,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.acmeinsurance.ldapsync.core.Constants;
 import com.acmeinsurance.ldapsync.SyncConfig;
 import com.acmeinsurance.ldapsync.core.SalesforceIds;
 import com.acmeinsurance.ldapsync.ldap.LdapDirectory;
@@ -223,7 +224,7 @@ final class SalesforceSyncServiceTest {
         assertNoErrors(report);
         final SearchResultEntry bob = ldap.get(BOB_DN);
         assertNotNull(bob);
-        assertEquals(PersonWriter.PERMANENT_LOCK, bob.getAttributeValue("pwdAccountLockedTime"));
+        assertEquals(Constants.PERMANENT_LOCK, bob.getAttributeValue("pwdAccountLockedTime"));
         assertTrue(bob.hasAttribute("acmeDeactivated"));
         assertEquals(1, count(report, "agent.deactivated"));
 

@@ -1,5 +1,47 @@
 package com.acmeinsurance.auth.ldap;
 
+import static com.acmeinsurance.auth.Constants.ACME_ACCOUNT_DN;
+import static com.acmeinsurance.auth.Constants.ACME_DEACTIVATED;
+import static com.acmeinsurance.auth.Constants.ACME_FEATURE_DN;
+import static com.acmeinsurance.auth.Constants.ACME_GRANT_TYPE;
+import static com.acmeinsurance.auth.Constants.ACME_POLICY_NUMBER;
+import static com.acmeinsurance.auth.Constants.ACME_REDIRECT_URI;
+import static com.acmeinsurance.auth.Constants.ACME_USER_TYPE;
+import static com.acmeinsurance.auth.Constants.CLAIM_ACCOUNTS_AGENCIES;
+import static com.acmeinsurance.auth.Constants.CLAIM_ACCOUNTS_AGREEMENTS;
+import static com.acmeinsurance.auth.Constants.CLAIM_ACCOUNTS_BOOKS;
+import static com.acmeinsurance.auth.Constants.CLAIM_ACCOUNTS_CLIENTS;
+import static com.acmeinsurance.auth.Constants.CN;
+import static com.acmeinsurance.auth.Constants.DISPLAY_NAME;
+import static com.acmeinsurance.auth.Constants.ENTRY_UUID;
+import static com.acmeinsurance.auth.Constants.GIVEN_NAME;
+import static com.acmeinsurance.auth.Constants.LDAPS_SCHEME;
+import static com.acmeinsurance.auth.Constants.LDAP_TRUE;
+import static com.acmeinsurance.auth.Constants.MAIL;
+import static com.acmeinsurance.auth.Constants.OBJECT_CLASS;
+import static com.acmeinsurance.auth.Constants.OC_ACME_AGENCY_ACCOUNT;
+import static com.acmeinsurance.auth.Constants.OC_ACME_AGREEMENT_ACCOUNT;
+import static com.acmeinsurance.auth.Constants.OC_ACME_BOOK_ACCOUNT;
+import static com.acmeinsurance.auth.Constants.OC_ACME_CLIENT_ACCOUNT;
+import static com.acmeinsurance.auth.Constants.OC_ACME_FEATURE;
+import static com.acmeinsurance.auth.Constants.OC_ACME_OAUTH_CLIENT;
+import static com.acmeinsurance.auth.Constants.OC_ACME_PERMISSION;
+import static com.acmeinsurance.auth.Constants.OC_ACME_USER;
+import static com.acmeinsurance.auth.Constants.PERMANENT_LOCK;
+import static com.acmeinsurance.auth.Constants.PWD_ACCOUNT_LOCKED_TIME;
+import static com.acmeinsurance.auth.Constants.PWD_CHANGED_TIME;
+import static com.acmeinsurance.auth.Constants.PWD_RESET;
+import static com.acmeinsurance.auth.Constants.RDN_ACCOUNTS;
+import static com.acmeinsurance.auth.Constants.RDN_AGENCIES;
+import static com.acmeinsurance.auth.Constants.RDN_CLIENTS;
+import static com.acmeinsurance.auth.Constants.RDN_FEATURES;
+import static com.acmeinsurance.auth.Constants.RDN_OAUTH_CLIENTS;
+import static com.acmeinsurance.auth.Constants.RDN_PEOPLE;
+import static com.acmeinsurance.auth.Constants.RDN_SERVICES;
+import static com.acmeinsurance.auth.Constants.SN;
+import static com.acmeinsurance.auth.Constants.UID;
+import static com.acmeinsurance.auth.Constants.USER_PASSWORD;
+
 import java.security.GeneralSecurityException;
 import java.text.ParseException;
 import java.time.Instant;
@@ -31,6 +73,7 @@ import com.unboundid.ldap.sdk.SearchResult;
 import com.unboundid.ldap.sdk.SearchResultEntry;
 import com.unboundid.ldap.sdk.SearchScope;
 import com.unboundid.ldap.sdk.SimpleBindRequest;
+import com.unboundid.ldap.sdk.SingleServerSet;
 import com.unboundid.ldap.sdk.experimental.DraftBeheraLDAPPasswordPolicy10ErrorType;
 import com.unboundid.ldap.sdk.experimental.DraftBeheraLDAPPasswordPolicy10RequestControl;
 import com.unboundid.ldap.sdk.experimental.DraftBeheraLDAPPasswordPolicy10ResponseControl;
@@ -56,12 +99,10 @@ public class Directory {
 
     private static final Logger LOG = Logger.getLogger(Directory.class);
 
-    /** ppolicy value meaning "locked until an administrator unlocks" (the sync's deactivation). */
-    public static final String PERMANENT_LOCK = "000001010000Z";
 
-    private static final String[] USER_ATTRS = {"uid", "cn", "givenName", "sn", "mail", "acmeUserType",
-        "acmeAccountDN", "acmeFeatureDN", "acmePolicyNumber", "acmeDeactivated", "entryUUID", "pwdAccountLockedTime", "pwdReset",
-        "pwdChangedTime"};
+    private static final String[] USER_ATTRS = {UID, CN, GIVEN_NAME, SN, MAIL, ACME_USER_TYPE,
+        ACME_ACCOUNT_DN, ACME_FEATURE_DN, ACME_POLICY_NUMBER, ACME_DEACTIVATED, ENTRY_UUID, PWD_ACCOUNT_LOCKED_TIME,
+        PWD_RESET, PWD_CHANGED_TIME};
 
     /** Result of checking a user's password. */
     public enum BindOutcome {
@@ -110,10 +151,10 @@ public class Directory {
 
         public Map<String, List<String>> asClaim() {
             final Map<String, List<String>> m = new TreeMap<>();
-            m.put("agencies", agencies);
-            m.put("agreements", agreements);
-            m.put("books", books);
-            m.put("clients", clients);
+            m.put(CLAIM_ACCOUNTS_AGENCIES, agencies);
+            m.put(CLAIM_ACCOUNTS_AGREEMENTS, agreements);
+            m.put(CLAIM_ACCOUNTS_BOOKS, books);
+            m.put(CLAIM_ACCOUNTS_CLIENTS, clients);
             return m;
         }
     }
@@ -133,12 +174,12 @@ public class Directory {
     public Directory(final AuthConfig cfg) throws LDAPException {
         this.cfg = cfg;
         this.base = new DN(cfg.ldap().baseDn());
-        this.people = child("ou=people", base);
-        this.features = child("ou=features", base);
-        final DN accounts = child("ou=accounts", base);
-        this.agencies = child("ou=agencies", accounts);
-        this.clientAccounts = child("ou=clients", accounts);
-        this.oauthClients = child("ou=oauth-clients", child("ou=services", base));
+        this.people = child(RDN_PEOPLE, base);
+        this.features = child(RDN_FEATURES, base);
+        final DN accounts = child(RDN_ACCOUNTS, base);
+        this.agencies = child(RDN_AGENCIES, accounts);
+        this.clientAccounts = child(RDN_CLIENTS, accounts);
+        this.oauthClients = child(RDN_OAUTH_CLIENTS, child(RDN_SERVICES, base));
     }
 
     void start(@Observes final StartupEvent ev) throws LDAPException, GeneralSecurityException {
@@ -147,12 +188,14 @@ public class Directory {
         options.setConnectTimeoutMillis(10_000);
         options.setResponseTimeoutMillis(15_000);
         options.setSSLSocketVerifier(new HostNameSSLSocketVerifier(true));
-        socketFactory = "ldaps".equalsIgnoreCase(url.getScheme())
+        socketFactory = LDAPS_SCHEME.equalsIgnoreCase(url.getScheme())
                 ? new SSLUtil(JVMDefaultTrustManager.getInstance()).createSSLSocketFactory()
                 : SocketFactory.getDefault();
-        final LDAPConnection first = connect();
-        first.bind(cfg.ldap().bindDn(), cfg.ldap().bindPassword());
-        pool = new LDAPConnectionPool(first, 1, Math.max(1, cfg.ldap().poolSize()));
+        // The pool opens, binds and closes its own connections (and re-binds any it
+        // re-establishes), so a failed bind at startup leaves no connection open.
+        pool = new LDAPConnectionPool(new SingleServerSet(url.getHost(), url.getPort(), socketFactory, options),
+                new SimpleBindRequest(cfg.ldap().bindDn(), cfg.ldap().bindPassword()), 1,
+                Math.max(1, cfg.ldap().poolSize()));
         pool.setRetryFailedOperationsDueToInvalidConnections(true);
         LOG.infof("Directory: %s as %s", cfg.ldap().url(), cfg.ldap().bindDn());
     }
@@ -170,16 +213,16 @@ public class Directory {
         if (username == null || username.isBlank()) {
             return null;
         }
-        return findUser(Filter.createEqualityFilter("uid", username.trim()));
+        return findUser(Filter.createEqualityFilter(UID, username.trim()));
     }
 
     /** The user with this entryUUID (the token subject), or null. Survives renames and moves. */
     public User findById(final String id) throws LDAPException {
-        return findUser(Filter.createEqualityFilter("entryUUID", id));
+        return findUser(Filter.createEqualityFilter(ENTRY_UUID, id));
     }
 
     private User findUser(final Filter f) throws LDAPException {
-        final Filter filter = Filter.createANDFilter(f, Filter.createEqualityFilter("objectClass", "acmeUser"));
+        final Filter filter = Filter.createANDFilter(f, Filter.createEqualityFilter(OBJECT_CLASS, OC_ACME_USER));
         final SearchResult r = pool.search(people.toString(), SearchScope.SUB, filter, USER_ATTRS);
         if (r.getEntryCount() != 1) {
             return null; // none, or (impossible with the unique overlay) ambiguous
@@ -188,7 +231,7 @@ public class Directory {
     }
 
     private static User toUser(final SearchResultEntry e) {
-        final String changed = e.getAttributeValue("pwdChangedTime");
+        final String changed = e.getAttributeValue(PWD_CHANGED_TIME);
         Instant changedAt = null;
         if (changed != null) {
             try {
@@ -197,11 +240,12 @@ public class Directory {
                 LOG.warnf("%s: unreadable pwdChangedTime %s", e.getDN(), changed);
             }
         }
-        return new User(e.getDN(), e.getAttributeValue("entryUUID"), e.getAttributeValue("uid"),
-                e.getAttributeValue("acmeUserType"), e.getAttributeValue("cn"), e.getAttributeValue("givenName"),
-                e.getAttributeValue("sn"), e.getAttributeValue("mail"), values(e, "acmeAccountDN"),
-                values(e, "acmeFeatureDN"), sorted(values(e, "acmePolicyNumber")), e.hasAttribute("acmeDeactivated"), e.getAttributeValue("pwdAccountLockedTime"),
-                "TRUE".equalsIgnoreCase(e.getAttributeValue("pwdReset")), changedAt);
+        return new User(e.getDN(), e.getAttributeValue(ENTRY_UUID), e.getAttributeValue(UID),
+                e.getAttributeValue(ACME_USER_TYPE), e.getAttributeValue(CN), e.getAttributeValue(GIVEN_NAME),
+                e.getAttributeValue(SN), e.getAttributeValue(MAIL), values(e, ACME_ACCOUNT_DN),
+                values(e, ACME_FEATURE_DN), sorted(values(e, ACME_POLICY_NUMBER)), e.hasAttribute(ACME_DEACTIVATED),
+                e.getAttributeValue(PWD_ACCOUNT_LOCKED_TIME),
+                LDAP_TRUE.equalsIgnoreCase(e.getAttributeValue(PWD_RESET)), changedAt);
     }
 
     /** Checks a user's password by binding as them, asking for the password policy response. */
@@ -291,19 +335,19 @@ public class Directory {
             if (dn == null || !dn.isDescendantOf(features, false)) {
                 continue;
             }
-            final SearchResultEntry e = pool.getEntry(dn.toString(), "objectClass", "cn");
+            final SearchResultEntry e = pool.getEntry(dn.toString(), OBJECT_CLASS, CN);
             if (e == null) {
                 continue;
             }
-            if (e.hasObjectClass("acmeFeature")) {
-                final Set<String> perms = out.computeIfAbsent(e.getAttributeValue("cn"), k -> new TreeSet<>());
+            if (e.hasObjectClass(OC_ACME_FEATURE)) {
+                final Set<String> perms = out.computeIfAbsent(e.getAttributeValue(CN), k -> new TreeSet<>());
                 final SearchResult children = pool.search(dn.toString(), SearchScope.ONE,
-                        Filter.createEqualityFilter("objectClass", "acmePermission"), "cn");
-                children.getSearchEntries().forEach(p -> perms.add(p.getAttributeValue("cn")));
-            } else if (e.hasObjectClass("acmePermission")) {
+                        Filter.createEqualityFilter(OBJECT_CLASS, OC_ACME_PERMISSION), CN);
+                children.getSearchEntries().forEach(p -> perms.add(p.getAttributeValue(CN)));
+            } else if (e.hasObjectClass(OC_ACME_PERMISSION)) {
                 final String feature = rdnValue(dn.getParent());
                 if (feature != null) {
-                    out.computeIfAbsent(feature, k -> new TreeSet<>()).add(e.getAttributeValue("cn"));
+                    out.computeIfAbsent(feature, k -> new TreeSet<>()).add(e.getAttributeValue(CN));
                 }
             }
         }
@@ -327,20 +371,20 @@ public class Directory {
             if (dn == null) {
                 continue;
             }
-            final SearchResultEntry e = pool.getEntry(dn.toString(), "objectClass");
+            final SearchResultEntry e = pool.getEntry(dn.toString(), OBJECT_CLASS);
             if (e == null) {
                 continue;
             }
             if (dn.isDescendantOf(agencies, false)) {
                 final String path = path(dn, agencies);
-                if (e.hasObjectClass("acmeAgencyAccount")) {
+                if (e.hasObjectClass(OC_ACME_AGENCY_ACCOUNT)) {
                     ag.add(path);
-                } else if (e.hasObjectClass("acmeAgreementAccount")) {
+                } else if (e.hasObjectClass(OC_ACME_AGREEMENT_ACCOUNT)) {
                     agr.add(path);
-                } else if (e.hasObjectClass("acmeBookAccount")) {
+                } else if (e.hasObjectClass(OC_ACME_BOOK_ACCOUNT)) {
                     bk.add(path);
                 }
-            } else if (dn.isDescendantOf(clientAccounts, false) && e.hasObjectClass("acmeClientAccount")) {
+            } else if (dn.isDescendantOf(clientAccounts, false) && e.hasObjectClass(OC_ACME_CLIENT_ACCOUNT)) {
                 cl.add(rdnValue(dn));
             }
         }
@@ -362,17 +406,17 @@ public class Directory {
         if (clientId == null || clientId.isBlank()) {
             return null;
         }
-        final String dn = new DN(new RDN("cn", clientId), oauthClients).toString();
-        final SearchResultEntry e = pool.getEntry(dn, "objectClass", "cn", "displayName", "acmeRedirectUri",
-                "acmeGrantType");
-        if (e == null || !e.hasObjectClass("acmeOAuthClient")) {
+        final String dn = new DN(new RDN(CN, clientId), oauthClients).toString();
+        final SearchResultEntry e = pool.getEntry(dn, OBJECT_CLASS, CN, DISPLAY_NAME, ACME_REDIRECT_URI,
+                ACME_GRANT_TYPE);
+        if (e == null || !e.hasObjectClass(OC_ACME_OAUTH_CLIENT)) {
             return null;
         }
         final Set<String> grants = new TreeSet<>();
-        values(e, "acmeGrantType").forEach(g -> grants.add(g.toLowerCase(Locale.ROOT)));
-        final String name = e.getAttributeValue("displayName");
-        return new Client(e.getDN(), e.getAttributeValue("cn"), name == null ? clientId : name,
-                hasSecret(dn), Set.copyOf(values(e, "acmeRedirectUri")), Set.copyOf(grants));
+        values(e, ACME_GRANT_TYPE).forEach(g -> grants.add(g.toLowerCase(Locale.ROOT)));
+        final String name = e.getAttributeValue(DISPLAY_NAME);
+        return new Client(e.getDN(), e.getAttributeValue(CN), name == null ? clientId : name,
+                hasSecret(dn), Set.copyOf(values(e, ACME_REDIRECT_URI)), Set.copyOf(grants));
     }
 
     /**
@@ -381,7 +425,7 @@ public class Directory {
      * ou=oauth-clients alone in 10-config-db.ldif).
      */
     private boolean hasSecret(final String dn) throws LDAPException {
-        final SearchResult r = pool.search(dn, SearchScope.BASE, Filter.createPresenceFilter("userPassword"), "1.1");
+        final SearchResult r = pool.search(dn, SearchScope.BASE, Filter.createPresenceFilter(USER_PASSWORD), "1.1");
         return r.getEntryCount() == 1;
     }
 
