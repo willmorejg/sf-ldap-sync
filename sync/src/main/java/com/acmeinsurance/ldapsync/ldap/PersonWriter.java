@@ -61,6 +61,10 @@ public final class PersonWriter {
     private static final DateTimeFormatter GENERALIZED_TIME =
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss'Z'").withZone(ZoneOffset.UTC);
 
+    public static String[] getReadAttrs() {
+        return READ_ATTRS;
+    }
+
     /**
      * How one source writes people.
      *

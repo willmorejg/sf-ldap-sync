@@ -1,19 +1,5 @@
 package com.acmeinsurance.ldapsync.salesforce;
 
-import static com.acmeinsurance.ldapsync.core.Constants.ACME_DEACTIVATED;
-import static com.acmeinsurance.ldapsync.core.Constants.ACME_SALESFORCE_ID;
-import static com.acmeinsurance.ldapsync.core.Constants.ACME_SOURCE;
-import static com.acmeinsurance.ldapsync.core.Constants.CN;
-import static com.acmeinsurance.ldapsync.core.Constants.DISPLAY_NAME;
-import static com.acmeinsurance.ldapsync.core.Constants.OBJECT_CLASS;
-import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_ACCOUNT_ACCESS;
-import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_FEATURE_ACCESS;
-import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_SYNC_MANAGED;
-import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_USER;
-import static com.acmeinsurance.ldapsync.core.Constants.OC_INET_ORG_PERSON;
-import static com.acmeinsurance.ldapsync.core.Constants.SOURCE_SALESFORCE;
-import static com.acmeinsurance.ldapsync.core.Constants.USER_TYPE_AGENT;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -33,6 +19,19 @@ import com.acmeinsurance.ldapsync.core.AccountLevel;
 import com.acmeinsurance.ldapsync.core.AccountMapper;
 import com.acmeinsurance.ldapsync.core.AccountTreePlanner;
 import com.acmeinsurance.ldapsync.core.AgentMapper;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_DEACTIVATED;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_SALESFORCE_ID;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_SOURCE;
+import static com.acmeinsurance.ldapsync.core.Constants.CN;
+import static com.acmeinsurance.ldapsync.core.Constants.DISPLAY_NAME;
+import static com.acmeinsurance.ldapsync.core.Constants.OBJECT_CLASS;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_ACCOUNT_ACCESS;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_FEATURE_ACCESS;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_SYNC_MANAGED;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_USER;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_INET_ORG_PERSON;
+import static com.acmeinsurance.ldapsync.core.Constants.SOURCE_SALESFORCE;
+import static com.acmeinsurance.ldapsync.core.Constants.USER_TYPE_AGENT;
 import com.acmeinsurance.ldapsync.core.PersonSpec;
 import com.acmeinsurance.ldapsync.core.SafetyGuard;
 import com.acmeinsurance.ldapsync.core.SyncReport;
@@ -348,7 +347,7 @@ public class SalesforceSyncService {
         // Agents who are no longer returned (deactivated or filtered out in Salesforce) are locked, not deleted.
         final List<SearchResultEntry> owned = dir.searchAll(ag.ou(), SearchScope.ONE,
                 Filter.createANDFilter(Filter.createEqualityFilter(ACME_SOURCE, SOURCE_SALESFORCE),
-                        Filter.createPresenceFilter(ACME_SALESFORCE_ID)), PersonWriter.READ_ATTRS);
+                        Filter.createPresenceFilter(ACME_SALESFORCE_ID)), PersonWriter.getReadAttrs());
         final List<SearchResultEntry> gone = owned.stream()
                 .filter(e -> !seen.contains(e.getAttributeValue(ACME_SALESFORCE_ID))
                         && !e.hasAttribute(ACME_DEACTIVATED))
