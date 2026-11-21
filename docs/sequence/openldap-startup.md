@@ -12,15 +12,18 @@ sequenceDiagram
     participant SA as slapadd
     participant W as nginx + php-fpm
     participant D as slapd
-    participant Sy as sync
-    participant Au as auth
+    participant B as backend
 
     PC->>E: start openldap (env from .env)
     alt first start (no cn=config.ldif)
-        E->>E: require LDAP_ADMIN_PASSWORD, SVC_SYNC_PASSWORD, SVC_AUTH_PASSWORD
+        E->>E: require LDAP_ADMIN_PASSWORD, SVC_SYNC_PASSWORD, SVC_AUTH_PASSWORD, SVC_DIRECTORY_PASSWORD
         E->>E: Argon2-hash the passwords
         E->>SA: -n0: 00-config-global + core/cosine/inetorgperson + 01/02/03 acmeinsurance schemas + 10-config-db
         E->>SA: -n1: 20-dit (base, OUs, service accounts, ppolicy subentries)
+        E->>SA: 36 directory feature, 38 sync feature (always)
+        opt DIRECTORY_CLIENT_SECRET set
+            E->>SA: 37 insure-directory OAuth client (hashed secret)
+        end
         opt LOAD_SAMPLES=true
             E->>SA: 30 sample clients, 33 public OAuth client, 32 features
             opt OAUTH_DEMO_CLIENT_SECRET set
@@ -48,11 +51,12 @@ sequenceDiagram
         PC->>D: anonymous base search for namingContexts
         D-->>PC: result
     end
-    PC->>Sy: start when openldap is healthy
-    Sy->>D: bind as cn=svc-sync
-    PC->>Au: start when openldap is healthy
-    Au->>D: bind as cn=svc-auth (connection pool)
-    Au->>Au: load or generate RS256 signing key in /keys
+    PC->>B: start when openldap is healthy
+    B->>B: load or generate RS256 signing key in /keys
+    Note over B,D: each part opens its pool on first use and binds as its own account
+    B->>D: sync: bind as cn=svc-sync (CSV intake, startup sync)
+    B->>D: token service: bind as cn=svc-auth (lookups), user binds on separate connections
+    B->>D: InsureDirectory: bind as cn=svc-directory
 ```
 
 ## phpLDAPadmin sign-in

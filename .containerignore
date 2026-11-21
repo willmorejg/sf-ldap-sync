@@ -1,0 +1,13 @@
+# Build context of backend/Containerfile is the repository root; send only what it uses.
+*
+!backend/
+!frontend/
+!openldap/ldif/
+backend/build/
+backend/bin/
+backend/.gradle/
+backend/*.db
+backend/keys/
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/

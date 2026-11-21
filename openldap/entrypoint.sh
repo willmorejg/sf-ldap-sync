@@ -22,7 +22,7 @@ need() {
 mkdir -p "$RUN_DIR"
 
 if [ ! -e "$CONF_DIR/cn=config.ldif" ]; then
-  need LDAP_ADMIN_PASSWORD; need SVC_SYNC_PASSWORD; need SVC_AUTH_PASSWORD
+  need LDAP_ADMIN_PASSWORD; need SVC_SYNC_PASSWORD; need SVC_AUTH_PASSWORD; need SVC_DIRECTORY_PASSWORD
   echo "entrypoint: first start, building configuration"
   mkdir -p "$CONF_DIR" "$DATA_DIR"
   tmp=$(mktemp -d)
@@ -42,8 +42,18 @@ if [ ! -e "$CONF_DIR/cn=config.ldif" ]; then
 
   sync_hash=$(hash "$SVC_SYNC_PASSWORD")
   auth_hash=$(hash "$SVC_AUTH_PASSWORD")
+  directory_hash=$(hash "$SVC_DIRECTORY_PASSWORD")
   sed -e "s|__SVC_SYNC_PW_HASH__|$sync_hash|" -e "s|__SVC_AUTH_PW_HASH__|$auth_hash|" \
-      "$LDIF_DIR/20-dit.ldif" > "$tmp/dit.ldif"
+      -e "s|__SVC_DIRECTORY_PW_HASH__|$directory_hash|" "$LDIF_DIR/20-dit.ldif" > "$tmp/dit.ldif"
+  # InsureDirectory and the sync trigger: their features always; the InsureDirectory
+  # OAuth client when a secret is given.
+  { echo; cat "$LDIF_DIR/36-insure-directory.ldif"; } >> "$tmp/dit.ldif"
+  { echo; cat "$LDIF_DIR/38-sync-feature.ldif"; } >> "$tmp/dit.ldif"
+  if [ -n "${DIRECTORY_CLIENT_SECRET:-}" ]; then
+    client_hash=$(hash "$DIRECTORY_CLIENT_SECRET")
+    { echo; sed -e "s|__DIRECTORY_CLIENT_PW_HASH__|$client_hash|" "$LDIF_DIR/37-oauth-insure-directory.ldif"; } \
+      >> "$tmp/dit.ldif"
+  fi
   if [ "${LOAD_SAMPLES:-false}" = "true" ]; then
     { echo; cat "$LDIF_DIR/30-sample-clients.ldif"; } >> "$tmp/dit.ldif"
     { echo; cat "$LDIF_DIR/33-sample-oauth-public.ldif"; } >> "$tmp/dit.ldif"

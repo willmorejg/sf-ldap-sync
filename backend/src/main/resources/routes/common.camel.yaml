@@ -1,0 +1,37 @@
+# Shared by every Camel REST DSL API in this app: the OpenAPI document's info
+# (served at /openapi) and the error handling the API routes opt into with
+# routeConfigurationId: api-errors. The token service (/oauth2) is Quarkus REST,
+# not Camel, and is described at /q/openapi.
+
+- routeConfiguration:
+    id: api-errors
+    onException:
+      - onException:
+          exception:
+            - java.lang.Exception
+          handled:
+            constant: "true"
+          steps:
+            - removeHeaders:
+                pattern: "*"
+            - to: bean:apiErrors?method=handle
+            - marshal:
+                json:
+                  library: Jackson
+
+- restConfiguration:
+    apiProperty:
+      - key: api.title
+        value: Acme Insurance backend
+      - key: api.version
+        value: 0.1.0
+      - key: api.description
+        value: >-
+          InsureDirectory (/auth, /api) maintains the Acme Insurance directory for
+          customer service and developers: sign in through /auth/login, which sets
+          the idir_session cookie the API uses; requests other than GET need the
+          header X-Requested-With: InsureDirectory. The Salesforce sync (/sync)
+          needs an access token from this app's token service (/oauth2/token) whose
+          features claim holds sync: run-sync, sent as Authorization: Bearer.
+          The token service itself is described at /q/openapi. Sequence diagrams:
+          docs/sequence/.

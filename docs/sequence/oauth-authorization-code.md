@@ -3,7 +3,7 @@
 The flow for browser and single-page applications (for example the public sample
 client `demo-spa`). It follows RFC 6749 section 4.1 with PKCE (RFC 7636), and only
 `S256` is accepted. There is no consent screen, because every client is an Acme
-Insurance application. The code is in `auth/src/main/java/com/acmeinsurance/auth/web/AuthorizeResource.java`
+Insurance application. The code is in `backend/src/main/java/com/acmeinsurance/auth/web/AuthorizeResource.java`
 and `TokenResource.java`.
 
 The service never checks a password itself. It binds to OpenLDAP as the user and
@@ -118,6 +118,6 @@ sequenceDiagram
 | `policies` (policy numbers) | member, other |
 
 The user types for each claim are set by `auth.claims.*` in
-`auth/src/main/resources/application.properties`. See also
+`backend/src/main/resources/application.properties`. See also
 [oauth-refresh-token.md](oauth-refresh-token.md) and
 [oauth-password-grant.md](oauth-password-grant.md).

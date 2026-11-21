@@ -18,11 +18,16 @@ OAuth 2.0 JWT access tokens from it:
 | `ou=internal`, `ou=members`, `ou=other` | Not in Salesforce | CSV drop folder for now |
 | `ou=clients,ou=accounts` | Internal client IDs | By hand (phpLDAPadmin / ldapadd) |
 
-It is a Podman Compose project with three containers:
+It is a Podman Compose project with two containers:
 
 - **openldap**: OpenLDAP 2.6 built from the Nov 2026 schema design, plus small sync and auth add-ons. The same container serves phpLDAPadmin (nginx + php-fpm) at http://localhost:8090/.
-- **sync**: a Camel Quarkus service. Its YAML routes decide *when* a sync runs; Java code decides *what* to write.
-- **auth**: a Quarkus OAuth 2.0 token service. It checks passwords against the directory and puts an agent's features and accounts in the JWT (see [Token service](#token-service-auth)).
+- **backend**: one Camel Quarkus app on http://localhost:8080/ with three parts, each binding to the directory as its
+  own service account:
+  - the **sync** (svc-sync). Its YAML routes decide *when* a sync runs; Java code decides *what* to write.
+  - the **token service** (svc-auth), an OAuth 2.0 authorization server. It checks passwords against the directory and
+    puts a user's features and accounts in the JWT (see [Token service](#token-service-auth)).
+  - **InsureDirectory** (svc-directory), a directory maintenance app for customer service and developers: its API,
+    and the Angular app from `frontend/` (see [InsureDirectory](#insuredirectory)).
 
 Further documentation, including sequence diagrams of every flow, is in [docs/](docs/index.md).
 
@@ -51,26 +56,22 @@ Further documentation, including sequence diagrams of every flow, is in [docs/](
 │       ├── 32-sample-features.ldif    quoting > read-quotes, write-quotes
 │       ├── 33-sample-oauth-public.ldif        demo-spa (PKCE) client (LOAD_SAMPLES=true)
 │       ├── 34-sample-oauth-confidential.ldif  demo-app client (LOAD_SAMPLES=true + OAUTH_DEMO_CLIENT_SECRET)
-│       └── 35-sample-underwriting-companies.ldif  two companies (LOAD_SAMPLES or LOAD_SAMPLE_AGENCIES)
-├── sync/
-│   ├── build.gradle, settings.gradle, gradle.properties, gradlew, Containerfile
+│       ├── 35-sample-underwriting-companies.ldif  two companies (LOAD_SAMPLES or LOAD_SAMPLE_AGENCIES)
+│       ├── 36-insure-directory.ldif   the "directory" feature: view-entries, edit-entries, run-queries
+│       ├── 37-oauth-insure-directory.ldif  the insure-directory OAuth client (DIRECTORY_CLIENT_SECRET)
+│       └── 38-sync-feature.ldif       the "sync" feature: run-sync (the HTTP trigger)
+├── backend/                         the Quarkus app (one Gradle build; Containerfile, build context: the repo root)
 │   └── src/main/
-│       ├── resources/application.properties     all settings + Salesforce field mapping
-│       ├── resources/routes/*.camel.yaml        schedule, HTTP trigger, CDC, CSV intake
-│       └── java/com/acmeinsurance/ldapsync/
-│           ├── core/        pure logic: tree planning, diffs, mappers, safety guard (unit-tested)
-│           ├── ldap/        UnboundID adapter + PersonWriter
-│           ├── salesforce/  query reader + SalesforceSyncService
-│           └── csv/         CsvIntakeService
-├── auth/
-│   ├── build.gradle, settings.gradle, gradle.properties, gradlew, Containerfile
-│   └── src/main/
-│       ├── resources/application.properties, templates/   settings, login page
-│       ├── resources/META-INF/openapi.yaml       base OpenAPI document (info, schemas)
-│       └── java/com/acmeinsurance/auth/
-│           ├── ldap/Directory.java   user/client lookup, binds with ppolicy controls, grant resolution
-│           ├── token/                signing keys + JWKS, token building, codes, PKCE
-│           └── web/                  /oauth2/authorize, /oauth2/token, metadata, JWKS
+│       ├── resources/application.properties   all settings: ldap.*, auth.*, sync.*, directory.*
+│       ├── resources/routes/*.camel.yaml      common (REST and error config), csv-intake, salesforce-sync,
+│       │                                      directory-api
+│       ├── resources/templates/, META-INF/openapi.yaml   login page; base OpenAPI document of the token service
+│       └── java/com/acmeinsurance/
+│           ├── common/      Constants, LDAP config and connection pools, DN helpers, error mapping, web filters
+│           ├── sync/        core/ (pure logic, unit-tested), ldap/ (PersonWriter), salesforce/, csv/, web/ (trigger guard)
+│           ├── auth/        ldap/Directory, token/ (keys, JWTs, grants, PKCE), web/ (/oauth2, metadata, JWKS)
+│           └── directory/   auth/ (sign-in, sessions, guard), model/ (kinds of entry), service/, db/ (SQLite), ldap/
+├── frontend/                          InsureDirectory's Angular 22 app (standalone components, signals, CSS grid)
 └── samples/csv/{internal,members,other}/   example files for the inbox
 ```
 
@@ -83,35 +84,40 @@ podman compose up --build -d
 # Smoke test, run inside the openldap container (it has ldap-utils)
 set -a; . ./.env; set +a
 podman cp openldap/smoke-test.sh sf-ldap-sync_openldap_1:/tmp/smoke-test.sh
-podman exec -e SVC_SYNC_PASSWORD -e SVC_AUTH_PASSWORD sf-ldap-sync_openldap_1 sh /tmp/smoke-test.sh
+podman exec -e SVC_SYNC_PASSWORD -e SVC_AUTH_PASSWORD -e SVC_DIRECTORY_PASSWORD \
+  sf-ldap-sync_openldap_1 sh /tmp/smoke-test.sh
+
+# InsureDirectory: http://localhost:8080/ (sign in as a user holding the "directory" feature)
 
 # Load the sample people (needs LOAD_SAMPLES=true for the client IDs)
 cp -r samples/csv/* inbox/
-podman compose logs -f sync
+podman compose logs -f backend
 
-# Salesforce: dry run first (DRY_RUN=true in .env logs writes instead of making them)
-curl -X POST localhost:8080/sync/salesforce     # run now, returns the report
-curl localhost:8080/sync/salesforce             # last report
+# Salesforce: dry run first (DRY_RUN=true in .env logs writes instead of making them).
+# The trigger needs an access token whose features claim holds sync: run-sync
+# (grant acmeFeatureDN: cn=run-sync,cn=sync,ou=features,dc=acmeinsurance,dc=com).
+TOKEN=$(curl -s -u demo-app:$OAUTH_DEMO_CLIENT_SECRET -d grant_type=password -d username=... \
+  --data-urlencode password=... localhost:8080/oauth2/token | jq -r .access_token)
+curl -X POST -H "Authorization: Bearer $TOKEN" localhost:8080/sync/salesforce   # run now, returns the report
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/sync/salesforce           # last report
 ```
 
-When a dry-run report looks right, set `DRY_RUN=false` and restart `sync`.
+Without a valid token the trigger answers 401, and without `run-sync` 403 (both with a `WWW-Authenticate: Bearer`
+challenge). When a dry-run report looks right, set `DRY_RUN=false` and recreate `backend`.
 
-**API documentation (OpenAPI).**
+**API documentation (OpenAPI).** The backend serves two documents:
 
-| Service | Spec | Swagger UI |
+| Document | URL | Generated from |
 |---|---|---|
-| sync | http://localhost:8080/openapi (`/openapi.yaml` for YAML) | http://localhost:8080/q/swagger-ui/ |
-| auth | http://localhost:8081/q/openapi (`?format=json` for JSON) | dev mode only (`./gradlew quarkusDev`) |
+| Camel REST APIs: `/sync`, `/auth`, `/api` | http://localhost:8080/openapi (`/openapi.yaml` for YAML) | the REST DSL in `routes/*.camel.yaml` |
+| Token service: `/oauth2`, `/.well-known` | http://localhost:8080/q/openapi (`?format=json` for JSON) | annotations in `auth/web/` + `META-INF/openapi.yaml` |
 
-- **sync:** Camel generates the spec at runtime from the REST DSL in `routes/salesforce-sync.camel.yaml`
-  (`camel-quarkus-openapi-java`), so it always matches the routes. The operations are always listed; with
-  `SF_ENABLED=false` they answer 503 `{"status": "disabled: ..."}`. The title and description are in that file's `restConfiguration`.
-  `SYNC_API_HOST` sets the server shown in the spec (default `localhost:8080`).
-- **auth:** generated from the annotations in `auth/.../web/`, merged with the base document in
-  `auth/src/main/resources/META-INF/openapi.yaml` (info, client authentication, schemas).
-- Swagger UI is left out of the auth image on purpose: it is the production login service, and OAuth
-  clients find its endpoints through the RFC 8414 metadata anyway.
-- `OPENAPI_ENABLED=false` stops auth serving its spec. The sync spec is always on (loopback only).
+- Camel builds the first one at runtime (`camel-quarkus-openapi-java`), so it always matches the routes. The sync
+  operations are always listed; with `SF_ENABLED=false` they answer 503 `{"status": "disabled: ..."}`. Title and
+  description are in `routes/common.camel.yaml`. `BACKEND_API_HOST` sets the server shown (default `localhost:8080`).
+- Swagger UI is only in dev mode (`./gradlew quarkusDev`): this app is the production login service, and OAuth clients
+  find its endpoints through the RFC 8414 metadata anyway.
+- `OPENAPI_ENABLED=false` stops serving `/q/openapi`. `/openapi` is always on.
 
 **phpLDAPadmin** runs at http://localhost:8090/ (localhost only). Sign in as `cn=admin,dc=acmeinsurance,dc=com` with
 `LDAP_ADMIN_PASSWORD`, or as any other entry (svc-sync, a user), which gets that entry's ACL rights.
@@ -126,6 +132,58 @@ When a dry-run report looks right, set `DRY_RUN=false` and restart `sync`.
 Add `-e LDAP_ADMIN_PASSWORD` to the smoke-test `podman exec` to include the OAuth client checks.
 
 `DRY_RUN` covers every write, including the CSV intake. With `SF_ENABLED=false` the Salesforce routes are not created at all (`/sync/salesforce` answers 503 with a `disabled` status), so the app runs on CSV files alone.
+
+## InsureDirectory
+
+A web app for maintaining the directory without knowing LDAP, at http://localhost:8080/. Pages:
+- **People:** members, agents, internal users and other users.
+- **Accounts:** agencies, agreements and books in three columns, plus clients.
+- **Reference data:** underwriting companies, and features with their permissions.
+- **Query builder** (for developers): builds a filter from conditions, runs it, and saves queries. It shows the search as
+  an `ldapsearch` command, an LDAP URL, and a Java class another application can run: with the UnboundID LDAP SDK
+  (paged, so it returns more than the server's page limit) or with plain JNDI (no dependency). The Java reads the
+  connection from `LDAP_URL`, `LDAP_BIND_DN` and `LDAP_BIND_PASSWORD`.
+- **Audit log:** who changed what through the app.
+
+Forms are built from the field list of each kind of entry (`backend/.../directory/model/Kinds.java`). DN-valued attributes
+(account and feature grants, an agreement's underwriting company) are picked by name, not typed.
+
+**Sign-in.** Users sign in on the token service's login page (same origin, `/oauth2/authorize`); the app needs no
+passwords of its own. The API is the confidential OAuth client `insure-directory` (code + PKCE). It redeems the code
+and refreshes in-process, with the same checks as `/oauth2/token`, keeps the tokens on the server, and gives the
+browser only an HttpOnly session cookie. Access needs the `directory` feature, or some of its permissions:
+
+| Permission | Allows |
+|---|---|
+| `view-entries` | Using the app at all: browse and search |
+| `edit-entries` | Create, change and delete entries; lock, unlock, reset passwords |
+| `run-queries` | The query builder |
+
+Grant it like any other feature, for example to an internal user: `acmeFeatureDN: cn=directory,ou=features,dc=acmeinsurance,dc=com`.
+
+**What can be changed.** The app writes as `cn=svc-directory` and follows the same ownership rule as the syncs:
+- Hand-made entries can be changed and deleted.
+- On entries owned by Salesforce or the CSV feeds, only what the sync leaves alone can be changed: an agent's feature
+  grants, and an agreement's underwriting company. With `SF_MANAGES_UNDERWRITING_COMPANY=true`, an agreement's company
+  is read-only too.
+- Any person can be locked, unlocked (except when deactivated by their source) and given a temporary password, which
+  they must change at the next sign-in.
+- Only svc-directory (and the rootdn) can maintain underwriting companies; svc-sync only reads them.
+
+The audit log and saved queries are in SQLite (`DIRECTORY_DB`, a volume at `/data` in the container). The log records
+attribute names, never values.
+
+**Setup.** Set `SVC_DIRECTORY_PASSWORD` and `DIRECTORY_CLIENT_SECRET` (32+ characters) in `.env` before the first start;
+openldap then creates svc-directory, the feature and the OAuth client. An existing server takes
+`openldap/migrations/2026-11-21-add-insure-directory.sh` (see below). The app is reached at `AUTH_ISSUER`
+(`DIRECTORY_PUBLIC_URL` overrides it); add `{url}/auth/callback` to the client's `acmeRedirectUri` when it changes.
+
+**Development.**
+```sh
+cd backend && ./gradlew quarkusDev             # :8083 (LDAP_URL and the SVC_* passwords, DIRECTORY_CLIENT_SECRET from the environment)
+cd frontend && npm install && npm start        # Angular on :4200, proxies /api, /auth, /oauth2 and /.well-known to :8083
+```
+`http://localhost:4200/auth/callback` is a registered redirect URI, so sign-in works in development too.
 
 ## Salesforce setup
 
@@ -180,7 +238,7 @@ All of these are settings in `application.properties`, not code:
 
 ## Token service (auth)
 
-An OAuth 2.0 authorization server on port 8081. It has no database: users, grants and
+An OAuth 2.0 authorization server, part of the backend (port 8080). It has no database: users, grants and
 registered clients are all read from the directory, and tokens are stateless JWTs.
 
 | Endpoint | |
@@ -275,7 +333,7 @@ the `client_id`:
 
 ```sh
 curl -u demo-app:$OAUTH_DEMO_CLIENT_SECRET -d grant_type=password \
-     -d username=sample.agent --data-urlencode password=... localhost:8081/oauth2/token
+     -d username=sample.agent --data-urlencode password=... localhost:8080/oauth2/token
 ```
 
 **Keys.** On first start a 3072-bit RSA key is generated into the `auth-keys` volume. To rotate:
@@ -343,13 +401,26 @@ See `10-config-db.ldif` for the exact values.
 A server built before 2026-11-21 has no underwriting companies. Run
 `openldap/migrations/2026-11-21-add-underwriting-companies.sh` inside the container (instructions at its top).
 It adds the schema, the index, the refint and constraint settings, and `ou=underwritingCompanies`. It is safe to
-run again. Then load your companies as the rootdn.
+run again. Then load your companies as the rootdn (or, once InsureDirectory is set up, in its Underwriting companies page).
+
+For InsureDirectory, a server built before 2026-11-21 takes `openldap/migrations/2026-11-21-add-insure-directory.sh`,
+run inside the rebuilt openldap container with `SVC_DIRECTORY_PASSWORD` (and `DIRECTORY_CLIENT_SECRET`) passed in
+(instructions at its top). It adds `cn=svc-directory`, its limits and the ACLs from `10-config-db.ldif`, the
+`directory` feature and the `insure-directory` client. It is safe to run again.
+
+The single backend container (2026-11-21) replaced the sync, auth and directory containers. A server set up before
+then takes `openldap/migrations/2026-11-21-consolidate-backend.sh` (run inside the rebuilt openldap container with
+`LDAP_ADMIN_PASSWORD`; instructions at its top). It registers `http://localhost:8080/auth/callback` on
+`insure-directory` in place of the 8082 one, and adds the `sync` feature with `run-sync`. It is safe to run again.
+Remove the old containers before `podman-compose up -d`: `podman rm -f sf-ldap-sync_sync_1 sf-ldap-sync_auth_1
+sf-ldap-sync_directory_1`. The `auth-keys` and `directory-data` volumes carry over.
 
 ## What has been tested
 
 - **OpenLDAP config:** loaded into a real OpenLDAP 2.6.10.
-- **Smoke test:** `smoke-test.sh` passes 32/32 (last run 2026-11-21, slapd 2.6.10 in the openldap image, on a fresh load
-  and on a server migrated with the 2026-11-21 script). The 7 underwriting checks need `LDAP_ADMIN_PASSWORD`. It covers:
+- **Smoke test:** `smoke-test.sh` passes 39/39 (last run 2026-11-21, slapd 2.6.10 in the openldap image, on a server
+  migrated with the 2026-11-21 scripts). The 7 underwriting checks need `LDAP_ADMIN_PASSWORD`, and the 6 svc-directory
+  checks `SVC_DIRECTORY_PASSWORD`. It covers:
   - uniqueness
   - the existence constraints on account and feature grants
   - the `acmeUserType` value constraint
@@ -358,12 +429,23 @@ run again. Then load your companies as the rootdn.
   - the ACLs (users cannot change their own grants or user type)
   - OAuth clients: a confidential client binds, there is no lockout, svc-auth can tell confidential from public clients, and it cannot read secrets
   - underwriting companies: only companies are accepted, only agreements hold one, svc-auth can read them, and refint follows a company's rename and delete
-- **Token service:** `cd auth && ./gradlew build` runs 17 tests against an in-memory directory. They cover claims for each user type (including underwriting companies), the password, code+PKCE and refresh grants, client authentication, and the reset/change-password flow (ppolicy is simulated). The service was also run against real slapd 2.6.10 (2026-11-19). It checked the real ppolicy controls (reset forces a change, a too-short new password is rejected), the claims for `sample.agent`, and that a ppolicy lockout blocks both sign-in and refresh. On 2026-11-21 a live password-grant token for an agent
-holding an agency listed the company of that agency's agreement.
+  - svc-directory: maintains companies and resets passwords (with `pwdReset`), but cannot add OAuth clients or change service accounts; svc-sync cannot create companies
+  - the `sync` feature's `run-sync` permission exists
+- **Backend (2026-11-21):** `cd backend && ./gradlew build` (Gradle 9.9.1 wrapper, Groovy DSL, needs JDK 25) runs 98
+  tests against one in-memory directory loaded with the real schema from `openldap/ldif` (ppolicy simulated): the
+  sync's `core/` unit tests and its `PersonWriter`, `SalesforceSyncService` and `CsvIntakeService` integration tests;
+  the token service (claims per user type, all grants, client authentication, reset and change password); InsureDirectory
+  (entry rules, query validation, sign-in helpers, the HTTP surface without a session); and the sync trigger (401 without
+  a token, 403 without `run-sync`). The image build runs them too, since its context is the repository root.
+  `cd frontend && npx ng test` runs the filter builder tests. The container was run against the live stack: sign-in
+  through `/oauth2/authorize`, CRUD, the ownership and CSRF refusals, the query builder, the audit log, and the sync
+  trigger with and without the permission, checked with a script and in headless Chrome.
+- **Token service against real slapd (2026-11-19):** the real ppolicy controls (reset forces a change, a too-short
+  new password is rejected), the claims for `sample.agent`, and a ppolicy lockout blocking both sign-in and refresh. On
+  2026-11-21 a live password-grant token for an agent holding an agency listed the company of that agency's agreement.
 - **Paged searches:** with the limits above, paging returns more than 1000 entries.
-- **Build and tests:** `cd sync && ./gradlew build` (Gradle 9.9.1 wrapper, Groovy DSL, needs JDK 25; Gradle can't run on JDK 21 for this build). It runs 49 tests: unit tests for `core/`, plus `PersonWriter`, `SalesforceSyncService` and `CsvIntakeService` integration tests against an in-memory LDAP server loaded with the real schema from `openldap/ldif`. The container build skips tests, because its context is `sync/` only.
-- **App startup:** with `SF_ENABLED=false` the sync container runs on CSV intake alone (the 4 sample people load). With `SF_ENABLED=true` and no credentials it also starts and serves `/sync/salesforce` (a sync run without credentials has not been tried).
-- **OpenAPI (2026-11-20):** sync serves the Camel-generated spec at `/openapi` and Swagger UI shows it, with both operations listed whatever `SF_ENABLED` is. Checked both ways: `SF_ENABLED=true` returns the report, `false` returns 503 JSON. auth serves `/q/openapi`; `OPENAPI_ENABLED=false` turns it off.
+- **App startup:** with `SF_ENABLED=false` the backend runs the sync on CSV intake alone (the 4 sample people load). With `SF_ENABLED=true` and no credentials it also starts and serves `/sync/salesforce` (a sync run without credentials has not been tried). The LDAP pools are opened on first use, so it also starts while OpenLDAP is down.
+- **OpenAPI:** `/openapi` lists the sync, sign-in and InsureDirectory operations whatever `SF_ENABLED` is (2026-11-20: `SF_ENABLED=true` returns the report, `false` returns 503 JSON). `/q/openapi` lists the token service; `OPENAPI_ENABLED=false` turns it off.
 - **To confirm against a real org:**
   - `queryMore` paging takes the `nextRecordsUrl` from the message body.
   - The CDC endpoint syntax `salesforce:subscribe:data/ChangeEvents` is right for the Camel version in use.

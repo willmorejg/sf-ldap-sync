@@ -1,0 +1,575 @@
+# InsureDirectory HTTP API. The routes only check the session (guard bean) and call
+# the CDI beans that hold the logic: entries (EntryService), queries (QueryService),
+# audit (AuditLog) and authFlow (AuthFlow). Errors go through apiErrors.
+#
+# Every verb forwards to its own direct: route (camel.rest.inline-routes=false), so
+# the routes stay readable and the OpenAPI document (/openapi) lists every operation.
+# Request headers are removed before answering, so nothing a browser sent (the
+# Cookie header above all) is echoed back.
+
+# Error handling (api-errors) and the OpenAPI info are in common.camel.yaml.
+
+- rest:
+    id: auth-api
+    path: /auth
+    tag: Sign-in
+    description: Sign-in through the Acme token service (authorization code with PKCE)
+    get:
+      - id: login
+        path: /login
+        description: Redirects to the token service's sign-in page; returnTo is where to go afterwards
+        param:
+          - name: returnTo
+            type: query
+            required: false
+            description: A path on this site
+        responseMessage:
+          - code: "302"
+            message: To the sign-in page
+        to: direct:auth-login
+      - id: callback
+        path: /callback
+        description: Where the token service sends the browser back; starts the session (cookie idir_session)
+        responseMessage:
+          - code: "302"
+            message: To returnTo, or to /signed-out?reason=... when sign-in failed or was refused
+        to: direct:auth-callback
+    post:
+      - id: logout
+        path: /logout
+        description: Ends the session
+        produces: application/json
+        to: direct:auth-logout
+
+- rest:
+    id: session-api
+    path: /api
+    tag: Session
+    get:
+      - id: me
+        path: /me
+        description: "The signed-in user and their directory permissions"
+        produces: application/json
+        to: direct:me
+
+- rest:
+    id: entries-api
+    path: /api
+    tag: Entries
+    get:
+      - id: kinds
+        path: /kinds
+        description: "Entry kinds with their fields, used to build the forms"
+        produces: application/json
+        to: direct:kinds
+      - id: listEntries
+        path: /entries/{kind}
+        description: "Entries of one kind; q filters by name, parent limits accounts to one parent"
+        produces: application/json
+        param:
+          - name: kind
+            type: path
+            required: true
+          - name: q
+            type: query
+            required: false
+          - name: parent
+            type: query
+            required: false
+        to: direct:listEntries
+      - id: getEntry
+        path: /entries/{kind}/{id}
+        description: "One entry (id is the base64url DN), with every attribute and whether it can be edited"
+        produces: application/json
+        param:
+          - name: kind
+            type: path
+            required: true
+          - name: id
+            type: path
+            required: true
+        to: direct:getEntry
+      - id: lookup
+        path: /lookup
+        description: "Entries of the given kinds (comma separated) whose name matches q, for DN pickers"
+        produces: application/json
+        param:
+          - name: kinds
+            type: query
+            required: true
+          - name: q
+            type: query
+            required: false
+        to: direct:lookup
+    post:
+      - id: createEntry
+        path: /entries/{kind}
+        description: "Create an entry: {rdn, parent?, attributes}"
+        produces: application/json
+        consumes: application/json
+        param:
+          - name: kind
+            type: path
+            required: true
+        to: direct:createEntry
+      - id: lockEntry
+        path: /entries/{kind}/{id}/lock
+        description: "Lock a person (pwdAccountLockedTime)"
+        produces: application/json
+        param:
+          - name: kind
+            type: path
+            required: true
+          - name: id
+            type: path
+            required: true
+        to: direct:lockEntry
+      - id: unlockEntry
+        path: /entries/{kind}/{id}/unlock
+        description: "Unlock a person; refused for a deactivated one"
+        produces: application/json
+        param:
+          - name: kind
+            type: path
+            required: true
+          - name: id
+            type: path
+            required: true
+        to: direct:unlockEntry
+      - id: resetPassword
+        path: /entries/{kind}/{id}/password-reset
+        description: "Set a temporary password the person must change at the next sign-in; answered once"
+        produces: application/json
+        param:
+          - name: kind
+            type: path
+            required: true
+          - name: id
+            type: path
+            required: true
+        to: direct:resetPassword
+    put:
+      - id: updateEntry
+        path: /entries/{kind}/{id}
+        description: "Replace the given attributes: {attributes}"
+        produces: application/json
+        consumes: application/json
+        param:
+          - name: kind
+            type: path
+            required: true
+          - name: id
+            type: path
+            required: true
+        to: direct:updateEntry
+    delete:
+      - id: deleteEntry
+        path: /entries/{kind}/{id}
+        description: "Delete an entry without children"
+        produces: application/json
+        param:
+          - name: kind
+            type: path
+            required: true
+          - name: id
+            type: path
+            required: true
+        to: direct:deleteEntry
+
+- rest:
+    id: query-builder-api
+    path: /api
+    tag: Query builder
+    get:
+      - id: querySchema
+        path: /query/schema
+        description: "Attribute types and object classes, for the query builder"
+        produces: application/json
+        to: direct:querySchema
+      - id: savedQueries
+        path: /query/saved
+        description: "Saved queries"
+        produces: application/json
+        to: direct:savedQueries
+    post:
+      - id: runQuery
+        path: /query/run
+        description: "Run a search: {baseDn, scope, filter, attributes}"
+        produces: application/json
+        consumes: application/json
+        to: direct:runQuery
+      - id: saveQuery
+        path: /query/saved
+        description: "Save a query: {name, description, baseDn, scope, filter, attributes}"
+        produces: application/json
+        consumes: application/json
+        to: direct:saveQuery
+    delete:
+      - id: deleteSavedQuery
+        path: /query/saved/{id}
+        description: "Delete a saved query"
+        produces: application/json
+        param:
+          - name: id
+            type: path
+            required: true
+        to: direct:deleteSavedQuery
+
+- rest:
+    id: audit-api
+    path: /api
+    tag: Audit
+    get:
+      - id: audit
+        path: /audit
+        description: "Changes made through this app, newest first; q filters by actor, DN or action"
+        produces: application/json
+        param:
+          - name: q
+            type: query
+            required: false
+          - name: limit
+            type: query
+            required: false
+        to: direct:audit
+
+- route:
+    id: auth-login
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:auth-login
+      steps:
+        - to: bean:authFlow?method=login
+        - removeHeaders:
+            pattern: "*"
+            excludePattern: "Location|Set-Cookie|Cache-Control|CamelHttpResponseCode"
+
+- route:
+    id: auth-callback
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:auth-callback
+      steps:
+        - to: bean:authFlow?method=callback
+        - removeHeaders:
+            pattern: "*"
+            excludePattern: "Location|Set-Cookie|Cache-Control|CamelHttpResponseCode"
+
+- route:
+    id: auth-logout
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:auth-logout
+      steps:
+        - to: bean:authFlow?method=logout
+        - removeHeaders:
+            pattern: "*"
+            excludePattern: "Set-Cookie"
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: me
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:me
+      steps:
+        - to: bean:guard?method=view
+        - to: bean:authFlow?method=me
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: kinds
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:kinds
+      steps:
+        - to: bean:guard?method=view
+        - to: bean:entries?method=kinds
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: listEntries
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:listEntries
+      steps:
+        - to: bean:guard?method=view
+        - to: bean:entries?method=list
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: createEntry
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:createEntry
+      steps:
+        - to: bean:guard?method=edit
+        - unmarshal:
+            json:
+              library: Jackson
+              unmarshalType: java.util.Map
+        - to: bean:entries?method=create
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: getEntry
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:getEntry
+      steps:
+        - to: bean:guard?method=view
+        - to: bean:entries?method=get
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: updateEntry
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:updateEntry
+      steps:
+        - to: bean:guard?method=edit
+        - unmarshal:
+            json:
+              library: Jackson
+              unmarshalType: java.util.Map
+        - to: bean:entries?method=update
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: deleteEntry
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:deleteEntry
+      steps:
+        - to: bean:guard?method=edit
+        - to: bean:entries?method=delete
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: lockEntry
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:lockEntry
+      steps:
+        - to: bean:guard?method=edit
+        - to: bean:entries?method=lock
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: unlockEntry
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:unlockEntry
+      steps:
+        - to: bean:guard?method=edit
+        - to: bean:entries?method=unlock
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: resetPassword
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:resetPassword
+      steps:
+        - to: bean:guard?method=edit
+        - to: bean:entries?method=resetPassword
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: lookup
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:lookup
+      steps:
+        - to: bean:guard?method=view
+        - to: bean:entries?method=lookup
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: runQuery
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:runQuery
+      steps:
+        - to: bean:guard?method=query
+        - unmarshal:
+            json:
+              library: Jackson
+              unmarshalType: java.util.Map
+        - to: bean:queries?method=run
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: querySchema
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:querySchema
+      steps:
+        - to: bean:guard?method=query
+        - to: bean:queries?method=schema
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: savedQueries
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:savedQueries
+      steps:
+        - to: bean:guard?method=query
+        - to: bean:queries?method=savedQueries
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: saveQuery
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:saveQuery
+      steps:
+        - to: bean:guard?method=query
+        - unmarshal:
+            json:
+              library: Jackson
+              unmarshalType: java.util.Map
+        - to: bean:queries?method=save
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: deleteSavedQuery
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:deleteSavedQuery
+      steps:
+        - to: bean:guard?method=query
+        - to: bean:queries?method=delete
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson
+
+- route:
+    id: audit
+    routeConfigurationId: api-errors
+    from:
+      uri: direct:audit
+      steps:
+        - to: bean:guard?method=view
+        - to: bean:audit?method=recent
+        - removeHeaders:
+            pattern: "*"
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - marshal:
+            json:
+              library: Jackson

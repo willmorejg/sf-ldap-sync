@@ -218,6 +218,9 @@ n=$(ldapsearch $AUTH -b "cn=zztest-feat,$F" -LLL '(objectClass=acmePermission)' 
 [ "$n" = 2 ] && ok "acl: svc-auth reads features and permissions" || bad "svc-auth sees $n permissions"
 ldapdelete $SYNC "cn=zz-read,cn=zztest-feat,$F" >/dev/null 2>&1
 [ -z "$(features)" ] && ok "refint: deleting a permission removes the grant" || bad "refint on feature delete: $(features)"
+n=$(ldapsearch $AUTH -b "cn=sync,$F" -LLL '(objectClass=acmePermission)' cn 2>/dev/null | grep -c '^cn: run-sync$')
+[ "$n" = 1 ] && ok "features: the backend's sync trigger permission (cn=run-sync,cn=sync) exists" \
+  || bad "cn=run-sync,cn=sync,$F missing (38-sync-feature.ldif)"
 
 # OAuth clients (rootdn only).
 if [ -n "${LDAP_ADMIN_PASSWORD:-}" ]; then
@@ -287,6 +290,45 @@ EOF
   [ -z "$(uw)" ] && ok "refint: deleting a company clears its agreements" || bad "refint on company delete: $(uw)"
 else
   echo "SKIP OAuth client checks (LDAP_ADMIN_PASSWORD not set)"
+fi
+
+# InsureDirectory's account (svc-directory), when its password is given.
+if [ -n "${SVC_DIRECTORY_PASSWORD:-}" ]; then
+  DIR="-x -H $URI -D cn=svc-directory,ou=services,$B -w $SVC_DIRECTORY_PASSWORD"
+  UWB=ou=underwritingCompanies,$B
+  expect_rc "svc-directory creates an underwriting company" 0 ldapadd $DIR <<EOF
+dn: cn=ZZTEST DIR UW,$UWB
+objectClass: acmeUnderwritingCompany
+cn: ZZTEST DIR UW
+EOF
+  expect_rc "svc-directory deletes an underwriting company" 0 ldapdelete $DIR "cn=ZZTEST DIR UW,$UWB"
+  expect_rc "acl: svc-sync cannot create an underwriting company" 50 ldapadd $SYNC <<EOF
+dn: cn=ZZTEST SYNC UW,$UWB
+objectClass: acmeUnderwritingCompany
+cn: ZZTEST SYNC UW
+EOF
+  expect_rc "svc-directory resets a password and sets pwdReset" 0 ldapmodify $DIR <<EOF
+dn: $U
+changetype: modify
+replace: userPassword
+userPassword: Directory-Reset-Pass-3
+-
+replace: pwdReset
+pwdReset: TRUE
+EOF
+  expect_rc "acl: svc-directory cannot add an OAuth client" 50 ldapadd $DIR <<EOF
+dn: cn=zztest-dir-client,$OC
+objectClass: acmeOAuthClient
+cn: zztest-dir-client
+EOF
+  expect_rc "acl: svc-directory cannot change a service account's password" 50 ldapmodify $DIR <<EOF
+dn: cn=svc-sync,ou=services,$B
+changetype: modify
+replace: userPassword
+userPassword: Some-Other-Pass-123
+EOF
+else
+  echo "SKIP svc-directory checks (SVC_DIRECTORY_PASSWORD not set)"
 fi
 
 # Clean up
