@@ -114,7 +114,7 @@ sequenceDiagram
 |---|---|
 | `sub` (entryUUID), `preferred_username`, `name`, `email`, `user_type`, `auth_time`, `client_id` | everyone |
 | `features` (feature → permissions) | agent, internal, other |
-| `accounts` (agency-rooted paths of held grants) | agent, internal, other |
+| `accounts` (agency-rooted paths of held grants, plus `underwriting_companies`: agreement path to company) | agent, internal, other |
 | `policies` (policy numbers) | member, other |
 
 The user types for each claim are set by `auth.claims.*` in

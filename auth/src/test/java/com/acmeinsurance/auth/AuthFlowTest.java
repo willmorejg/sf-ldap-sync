@@ -2,6 +2,7 @@ package com.acmeinsurance.auth;
 
 import static com.acmeinsurance.auth.testsupport.TestDirectory.AGENCIES;
 import static com.acmeinsurance.auth.testsupport.TestDirectory.AGENTS;
+import static com.acmeinsurance.auth.testsupport.TestDirectory.BASE;
 import static com.acmeinsurance.auth.testsupport.TestDirectory.CLIENT_ACCOUNTS;
 import static com.acmeinsurance.auth.testsupport.TestDirectory.DEMO_APP_SECRET;
 import static com.acmeinsurance.auth.testsupport.TestDirectory.FEATURES;
@@ -107,8 +108,8 @@ class AuthFlowTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, List<String>> map(final JwtClaims c, final String name) {
-        return (Map<String, List<String>>) c.getClaimValue(name);
+    private static <V> Map<String, V> map(final JwtClaims c, final String name) {
+        return (Map<String, V>) c.getClaimValue(name);
     }
 
     // ---- metadata ----------------------------------------------------------
@@ -142,8 +143,9 @@ class AuthFlowTest {
         assertEquals("demo-app", c.getStringClaimValue("client_id"));
         assertEquals(ldap().get("uid=claims.one," + AGENTS).getAttributeValue("entryUUID"), c.getSubject());
         assertEquals(Map.of("quoting", List.of("read-quotes")), map(c, "features"));
-        final Map<String, List<String>> accounts = map(c, "accounts");
+        final Map<String, Object> accounts = map(c, "accounts");
         assertEquals(List.of("AG0042/AGR-0042-01"), accounts.get("agreements"));
+        assertEquals(Map.of("AG0042/AGR-0042-01", "Big Insurance UW Co"), accounts.get("underwriting_companies"));
         assertEquals(List.of(), accounts.get("agencies"));
         assertEquals(List.of(), accounts.get("books"));
         assertEquals(List.of(), accounts.get("clients"));
@@ -160,10 +162,32 @@ class AuthFlowTest {
                 .path("access_token"));
 
         assertEquals(Map.of("quoting", List.of("read-quotes", "write-quotes")), map(c, "features"));
-        final Map<String, List<String>> accounts = map(c, "accounts");
+        final Map<String, Object> accounts = map(c, "accounts");
         assertEquals(List.of("AG0042"), accounts.get("agencies"));
         assertEquals(List.of("AG0042/AGR-0042-02/BK-000340"), accounts.get("books"));
         assertEquals(List.of("100234"), accounts.get("clients"));
+        // AGR-0042-01 under the held agency has a company; AGR-0042-02 (above BK-000340) has none.
+        assertEquals(Map.of("AG0042/AGR-0042-01", "Big Insurance UW Co"), accounts.get("underwriting_companies"));
+    }
+
+    @Test
+    void aHeldBookCarriesTheUnderwritingCompanyOfItsAgreement() throws Exception {
+        final String agr02 = "cn=AGR-0042-02," + AG0042;
+        ldap().modify("dn: " + agr02, "changetype: modify", "replace: acmeUnderwritingCompanyDN",
+                "acmeUnderwritingCompanyDN: cn=Second Mutual Underwriters,ou=underwritingCompanies," + BASE);
+        try {
+            agent("claims.uw", List.of(), List.of(BK_340));
+
+            final JwtClaims c = verify(passwordGrant("claims.uw", PASSWORD).then().statusCode(200).extract()
+                    .path("access_token"));
+
+            final Map<String, Object> accounts = map(c, "accounts");
+            assertEquals(List.of("AG0042/AGR-0042-02/BK-000340"), accounts.get("books"));
+            assertEquals(Map.of("AG0042/AGR-0042-02", "Second Mutual Underwriters"),
+                    accounts.get("underwriting_companies"));
+        } finally {
+            ldap().modify("dn: " + agr02, "changetype: modify", "delete: acmeUnderwritingCompanyDN");
+        }
     }
 
     @Test

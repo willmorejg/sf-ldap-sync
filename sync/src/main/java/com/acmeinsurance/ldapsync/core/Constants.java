@@ -36,6 +36,8 @@ public enum Constants {
     public static final String ACME_SALESFORCE_ID = "acmeSalesforceId";
     public static final String ACME_SOURCE = "acmeSource";
     public static final String ACME_DEACTIVATED = "acmeDeactivated";
+    /** On agreements: DN of the underwriting company, an entry under ou=underwritingCompanies. */
+    public static final String ACME_UNDERWRITING_COMPANY_DN = "acmeUnderwritingCompanyDN";
 
     // ---- LDAP attributes: password policy (ppolicy overlay) ----------------
 
@@ -55,6 +57,7 @@ public enum Constants {
     public static final String OC_ACME_AGENCY_ACCOUNT = "acmeAgencyAccount";
     public static final String OC_ACME_AGREEMENT_ACCOUNT = "acmeAgreementAccount";
     public static final String OC_ACME_BOOK_ACCOUNT = "acmeBookAccount";
+    public static final String OC_ACME_UNDERWRITING_COMPANY = "acmeUnderwritingCompany";
 
     // ---- acmeSource values (who owns an entry) -----------------------------
 

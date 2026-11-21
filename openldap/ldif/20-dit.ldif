@@ -10,6 +10,7 @@
 # |   |-- ou=agencies     agency > agreement > book tree (Salesforce Account)
 # |   `-- ou=clients      internally generated client IDs (by hand / CSV)
 # |-- ou=features        feature > permission tree, granted with acmeFeatureDN
+# |-- ou=underwritingCompanies  possible values of an agreement's acmeUnderwritingCompanyDN
 # |-- ou=services        svc-sync (write), svc-auth (read)
 # |   `-- ou=oauth-clients  applications registered with the auth service
 # `-- ou=policies        password policies: default, internal, agents, oauth-clients
@@ -63,6 +64,11 @@ dn: ou=features,dc=acmeinsurance,dc=com
 objectClass: organizationalUnit
 ou: features
 description: Application features and their permissions
+
+dn: ou=underwritingCompanies,dc=acmeinsurance,dc=com
+objectClass: organizationalUnit
+ou: underwritingCompanies
+description: Underwriting companies; agreements name theirs with acmeUnderwritingCompanyDN
 
 dn: ou=services,dc=acmeinsurance,dc=com
 objectClass: organizationalUnit

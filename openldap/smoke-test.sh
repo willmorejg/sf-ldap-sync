@@ -248,6 +248,43 @@ EOF
   ldapsearch $AUTH -b "cn=zztest-conf,$OC" -s base -LLL userPassword | grep -q '^userPassword' \
     && bad "svc-auth can read a client secret" || ok "acl: svc-auth cannot read a client secret"
   ldapdelete $ADM "cn=zztest-conf,$OC" "cn=zztest-pub,$OC" >/dev/null 2>&1
+
+  # Underwriting companies (maintained by the rootdn) and an agreement's
+  # acmeUnderwritingCompanyDN. The agreement was moved under ZZTEST2 above.
+  AGR="cn=ZZTEST-AGR,cn=ZZTEST2,$A"
+  UWB=ou=underwritingCompanies,$B
+  uw() { ldapsearch $SYNC -b "$AGR" -s base -LLL -o ldif-wrap=no acmeUnderwritingCompanyDN \
+    | grep '^acmeUnderwritingCompanyDN' | sed 's/^[^:]*: //'; }
+  expect_rc "admin creates an underwriting company" 0 ldapadd $ADM <<EOF
+dn: cn=ZZTEST UW Co,$UWB
+objectClass: acmeUnderwritingCompany
+cn: ZZTEST UW Co
+EOF
+  n=$(ldapsearch $AUTH -b "$UWB" -s one -LLL '(objectClass=acmeUnderwritingCompany)' 1.1 | grep -c '^dn: cn=ZZTEST')
+  [ "$n" = 1 ] && ok "acl: svc-auth reads underwriting companies" || bad "svc-auth sees $n test companies"
+  expect_rc "svc-sync sets an agreement's underwriting company" 0 ldapmodify $SYNC <<EOF
+dn: $AGR
+changetype: modify
+replace: acmeUnderwritingCompanyDN
+acmeUnderwritingCompanyDN: cn=ZZTEST UW Co,$UWB
+EOF
+  expect_rc "constraint: an underwriting company DN that is not a company is rejected" 19 ldapmodify $SYNC <<EOF
+dn: $AGR
+changetype: modify
+replace: acmeUnderwritingCompanyDN
+acmeUnderwritingCompanyDN: cn=ZZTEST1,$A
+EOF
+  expect_rc "schema: only agreements hold an underwriting company" 65 ldapmodify $SYNC <<EOF
+dn: cn=ZZTEST1,$A
+changetype: modify
+add: acmeUnderwritingCompanyDN
+acmeUnderwritingCompanyDN: cn=ZZTEST UW Co,$UWB
+EOF
+  ldapmodrdn $ADM -r "cn=ZZTEST UW Co,$UWB" "cn=ZZTEST UW Co 2" >/dev/null 2>&1
+  [ "$(uw)" = "cn=ZZTEST UW Co 2,$UWB" ] && ok "refint: renaming a company rewrites its agreements" \
+    || bad "refint on company rename: $(uw)"
+  ldapdelete $ADM "cn=ZZTEST UW Co 2,$UWB" >/dev/null 2>&1
+  [ -z "$(uw)" ] && ok "refint: deleting a company clears its agreements" || bad "refint on company delete: $(uw)"
 else
   echo "SKIP OAuth client checks (LDAP_ADMIN_PASSWORD not set)"
 fi

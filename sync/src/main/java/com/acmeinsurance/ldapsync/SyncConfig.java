@@ -73,6 +73,9 @@ public interface SyncConfig {
 
         @WithDefault("ou=features,dc=acmeinsurance,dc=com")
         String featuresDn();
+
+        @WithDefault("ou=underwritingCompanies,dc=acmeinsurance,dc=com")
+        String underwritingCompaniesDn();
     }
 
     /** Agency, agreement and book records (Account record types in Salesforce). */
@@ -97,6 +100,13 @@ public interface SyncConfig {
 
         /** Record-type value to level (agency, agreement or book). */
         Map<String, String> recordTypes();
+
+        /**
+         * Agreement field holding the name (cn) of its underwriting company, e.g.
+         * Underwriting_Company__r.Name. Unset: the sync never touches an agreement's
+         * acmeUnderwritingCompanyDN, so it can be maintained by hand.
+         */
+        Optional<String> underwritingCompanyField();
     }
 
     /** Brokers and agents (Salesforce User records). */

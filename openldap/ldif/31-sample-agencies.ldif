@@ -13,6 +13,9 @@
 #     └── cn=AGR-0042-02         agreement
 #         └── cn=BK-000340       book
 #
+# AGR-0042-01 is underwritten by cn=Big Insurance UW Co
+# (35-sample-underwriting-companies.ldif); AGR-0042-02 names no company.
+#
 # The agent holds AGR-0042-01, so may see BK-000311 and BK-000312 but not
 # BK-000340, and the read-quotes permission of the quoting feature
 # (32-sample-features.ldif). No password is set; use ldappasswd as svc-sync to
@@ -26,6 +29,7 @@ dn: cn=AGR-0042-01,cn=AG0042,ou=agencies,ou=accounts,dc=acmeinsurance,dc=com
 objectClass: acmeAgreementAccount
 cn: AGR-0042-01
 displayName: Sample Agency agreement 01
+acmeUnderwritingCompanyDN: cn=Big Insurance UW Co,ou=underwritingCompanies,dc=acmeinsurance,dc=com
 
 dn: cn=BK-000311,cn=AGR-0042-01,cn=AG0042,ou=agencies,ou=accounts,dc=acmeinsurance,dc=com
 objectClass: acmeBookAccount

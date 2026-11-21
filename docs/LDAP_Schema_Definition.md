@@ -332,7 +332,7 @@ Acme Insurance's business structure maps to an account hierarchy, mirroring how 
 
 ```
 Agency (Broker/MGA)
-  ├── Agreement (Contract/Product Line)
+  ├── Agreement (Contract/Product Line) ··· underwriting company
   │   ├── Book (Subset of policies)
   │   └── Book
   └── Agreement
@@ -347,6 +347,26 @@ A broker or managing general agent (MGA) representing the top level of the organ
 ### Agreement
 
 A contract or product line within an agency (e.g., "Commercial Auto," "Workers Compensation"). One agency typically has multiple agreements. Agreements are synced from Salesforce Account records (Agreement record type) and are linked to agencies via `ParentId`.
+
+Each agreement may name its **underwriting company** in `acmeUnderwritingCompanyDN`
+(single-valued). The value is the DN of an `acmeUnderwritingCompany` entry, kept in the
+directory like the account hierarchy:
+
+```
+ou=underwritingCompanies,dc=acmeinsurance,dc=com
+├── cn=Big Insurance UW Co
+└── cn=Second Mutual Underwriters
+```
+
+The companies are maintained by hand (cn=admin or phpLDAPadmin), and are readable by
+svc-sync and svc-auth. The constraint overlay accepts only DNs of companies directly under
+`ou=underwritingCompanies`. Refint rewrites the value when a company is renamed, and
+removes it when the company is deleted. The schema allows the attribute only on agreements.
+The Salesforce sync sets it from an agreement field when
+`sync.accounts.underwriting-company-field` is configured, and otherwise leaves it alone.
+Access tokens carry it in `accounts.underwriting_companies`, a map from agreement path to company `cn`. The map
+covers every agreement the user's grants reach: held agreements, the agreement above a held book, and the
+agreements directly under a held agency.
 
 ### Book
 
@@ -455,6 +475,7 @@ The LDAP schema uses the following principal object classes to implement the str
 | `acmeAgreementAccount` | A contract or product line | `acmeAccount` |
 | `acmeBookAccount` | A policy portfolio | `acmeAccount` |
 | `acmeClientAccount` | A client (internally generated ID, outside agency tree) | `acmeAccount` |
+| `acmeUnderwritingCompany` | An underwriting company; the possible values of an agreement's `acmeUnderwritingCompanyDN` | `top` (structural) |
 | `acmeAccountAccess` | Auxiliary: access grants to accounts | — |
 | `acmeMemberAccess` | Auxiliary: access grants to policies (members) | — |
 | `acmeFeatureAccess` | Auxiliary: access grants to features (employees) | — |
@@ -481,6 +502,7 @@ The LDAP schema uses the following principal object classes to implement the str
 - `acmeSource` – Origin of record
 - `displayName` – Human-readable name
 - `description` – Account description
+- `acmeUnderwritingCompanyDN` – Agreements only: DN of the underwriting company (single-valued)
 - `userPassword` – (For OAuth clients only; confidential clients have secrets)
 
 **Feature & Permission Attributes:**

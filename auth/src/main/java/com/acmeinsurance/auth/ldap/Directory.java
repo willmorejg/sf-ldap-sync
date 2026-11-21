@@ -6,11 +6,13 @@ import static com.acmeinsurance.auth.Constants.ACME_FEATURE_DN;
 import static com.acmeinsurance.auth.Constants.ACME_GRANT_TYPE;
 import static com.acmeinsurance.auth.Constants.ACME_POLICY_NUMBER;
 import static com.acmeinsurance.auth.Constants.ACME_REDIRECT_URI;
+import static com.acmeinsurance.auth.Constants.ACME_UNDERWRITING_COMPANY_DN;
 import static com.acmeinsurance.auth.Constants.ACME_USER_TYPE;
 import static com.acmeinsurance.auth.Constants.CLAIM_ACCOUNTS_AGENCIES;
 import static com.acmeinsurance.auth.Constants.CLAIM_ACCOUNTS_AGREEMENTS;
 import static com.acmeinsurance.auth.Constants.CLAIM_ACCOUNTS_BOOKS;
 import static com.acmeinsurance.auth.Constants.CLAIM_ACCOUNTS_CLIENTS;
+import static com.acmeinsurance.auth.Constants.CLAIM_ACCOUNTS_UNDERWRITING_COMPANIES;
 import static com.acmeinsurance.auth.Constants.CN;
 import static com.acmeinsurance.auth.Constants.DISPLAY_NAME;
 import static com.acmeinsurance.auth.Constants.ENTRY_UUID;
@@ -146,15 +148,22 @@ public class Directory {
         }
     }
 
-    /** Granted accounts, by level. Agreement and book values are paths from the agency down. */
-    public record Accounts(List<String> agencies, List<String> agreements, List<String> books, List<String> clients) {
+    /**
+     * Granted accounts, by level. Agreement and book values are paths from the agency down.
+     *
+     * @param underwritingCompanies agreement path to the cn of its underwriting company, for
+     *                              every agreement the grants cover (see {@link #accounts})
+     */
+    public record Accounts(List<String> agencies, List<String> agreements, List<String> books, List<String> clients,
+                           Map<String, String> underwritingCompanies) {
 
-        public Map<String, List<String>> asClaim() {
-            final Map<String, List<String>> m = new TreeMap<>();
+        public Map<String, Object> asClaim() {
+            final Map<String, Object> m = new TreeMap<>();
             m.put(CLAIM_ACCOUNTS_AGENCIES, agencies);
             m.put(CLAIM_ACCOUNTS_AGREEMENTS, agreements);
             m.put(CLAIM_ACCOUNTS_BOOKS, books);
             m.put(CLAIM_ACCOUNTS_CLIENTS, clients);
+            m.put(CLAIM_ACCOUNTS_UNDERWRITING_COMPANIES, underwritingCompanies);
             return m;
         }
     }
@@ -360,18 +369,23 @@ public class Directory {
      * Account grants exactly as held (not expanded), classified by object class.
      * Agreements and books are given as paths ("AG0042/AGR-0042-01/BK-000311"),
      * so a resource server can tell whether a requested book falls under a grant.
+     *
+     * <p>Underwriting companies are listed for every agreement the grants cover: a
+     * held agreement, the agreement above a held book, and each agreement under a
+     * held agency. Agreements without a company are left out.
      */
     public Accounts accounts(final User user) throws LDAPException {
         final Set<String> ag = new TreeSet<>();
         final Set<String> agr = new TreeSet<>();
         final Set<String> bk = new TreeSet<>();
         final Set<String> cl = new TreeSet<>();
+        final Map<String, String> uw = new TreeMap<>();
         for (final String value : user.accountDns()) {
             final DN dn = parse(value);
             if (dn == null) {
                 continue;
             }
-            final SearchResultEntry e = pool.getEntry(dn.toString(), OBJECT_CLASS);
+            final SearchResultEntry e = pool.getEntry(dn.toString(), OBJECT_CLASS, ACME_UNDERWRITING_COMPANY_DN);
             if (e == null) {
                 continue;
             }
@@ -379,16 +393,43 @@ public class Directory {
                 final String path = path(dn, agencies);
                 if (e.hasObjectClass(OC_ACME_AGENCY_ACCOUNT)) {
                     ag.add(path);
+                    agreementsUnder(dn, uw);
                 } else if (e.hasObjectClass(OC_ACME_AGREEMENT_ACCOUNT)) {
                     agr.add(path);
+                    underwritingCompany(e, uw);
                 } else if (e.hasObjectClass(OC_ACME_BOOK_ACCOUNT)) {
                     bk.add(path);
+                    final SearchResultEntry parent = pool.getEntry(dn.getParentString(), OBJECT_CLASS,
+                            ACME_UNDERWRITING_COMPANY_DN);
+                    if (parent != null && parent.hasObjectClass(OC_ACME_AGREEMENT_ACCOUNT)) {
+                        underwritingCompany(parent, uw);
+                    }
                 }
             } else if (dn.isDescendantOf(clientAccounts, false) && e.hasObjectClass(OC_ACME_CLIENT_ACCOUNT)) {
                 cl.add(rdnValue(dn));
             }
         }
-        return new Accounts(List.copyOf(ag), List.copyOf(agr), List.copyOf(bk), List.copyOf(cl));
+        return new Accounts(List.copyOf(ag), List.copyOf(agr), List.copyOf(bk), List.copyOf(cl), Map.copyOf(uw));
+    }
+
+    /** Adds the underwriting company of every agreement directly under an agency. */
+    private void agreementsUnder(final DN agency, final Map<String, String> uw) throws LDAPException {
+        final Filter f = Filter.createANDFilter(Filter.createEqualityFilter(OBJECT_CLASS, OC_ACME_AGREEMENT_ACCOUNT),
+                Filter.createPresenceFilter(ACME_UNDERWRITING_COMPANY_DN));
+        for (final SearchResultEntry e : pool.search(agency.toString(), SearchScope.ONE, f,
+                ACME_UNDERWRITING_COMPANY_DN).getSearchEntries()) {
+            underwritingCompany(e, uw);
+        }
+    }
+
+    /** Adds an agreement's underwriting company (the cn of its DN), if it has one. */
+    private void underwritingCompany(final SearchResultEntry agreement, final Map<String, String> uw) {
+        final String value = agreement.getAttributeValue(ACME_UNDERWRITING_COMPANY_DN);
+        final String name = value == null ? null : rdnValue(parse(value));
+        final DN dn = parse(agreement.getDN());
+        if (name != null && dn != null) {
+            uw.put(path(dn, agencies), name);
+        }
     }
 
     /** cn values from just below {@code top} down to {@code dn}, joined with "/". */

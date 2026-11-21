@@ -54,6 +54,7 @@ if [ ! -e "$CONF_DIR/cn=config.ldif" ]; then
   fi
   if [ "${LOAD_SAMPLES:-false}" = "true" ] || [ "${LOAD_SAMPLE_AGENCIES:-false}" = "true" ]; then
     { echo; cat "$LDIF_DIR/32-sample-features.ldif"; } >> "$tmp/dit.ldif"
+    { echo; cat "$LDIF_DIR/35-sample-underwriting-companies.ldif"; } >> "$tmp/dit.ldif"
   fi
   # Hand-made agencies and a sample agent, for trying the directory without
   # Salesforce. Leave off on a server the Salesforce sync feeds: the sync never

@@ -1,6 +1,7 @@
 package com.acmeinsurance.ldapsync.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -17,15 +18,15 @@ final class AccountTreePlannerTest {
     static final String BK = "001000000000003AAA";
 
     static AccountNode agency(final String id, final String cn) {
-        return new AccountNode(id, AccountLevel.AGENCY, cn, null, null);
+        return new AccountNode(id, AccountLevel.AGENCY, cn, null, null, null);
     }
 
     static AccountNode agreement(final String id, final String cn, final String parent) {
-        return new AccountNode(id, AccountLevel.AGREEMENT, cn, parent, null);
+        return new AccountNode(id, AccountLevel.AGREEMENT, cn, parent, null, null);
     }
 
     static AccountNode book(final String id, final String cn, final String parent) {
-        return new AccountNode(id, AccountLevel.BOOK, cn, parent, null);
+        return new AccountNode(id, AccountLevel.BOOK, cn, parent, null, null);
     }
 
     @Test
@@ -76,7 +77,7 @@ final class AccountTreePlannerTest {
     @Test
     void mapperSkipsUnknownRecordTypesAndFallsBackToIdForCn() {
         final var mapping = new AccountMapper.Mapping("Id", "ParentId", "RecordType.DeveloperName", "AccountNumber",
-                "Name", Map.of("Agency", AccountLevel.AGENCY));
+                "Name", Map.of("Agency", AccountLevel.AGENCY), null);
         final List<Map<String, Object>> rows = List.of(
                 Map.of("Id", "001000000000001", "Name", "Example", "RecordType", Map.of("DeveloperName", "Agency")),
                 Map.of("Id", "001000000000002", "RecordType", Map.of("DeveloperName", "Household")));
@@ -87,5 +88,27 @@ final class AccountTreePlannerTest {
         assertEquals(1, result.skipped());
         assertEquals(SalesforceIds.to18("001000000000001"), result.nodes().get(0).cn());
         assertEquals(1, result.warnings().size());
+    }
+
+    @Test
+    void mapperReadsTheUnderwritingCompanyOfAgreementsOnly() {
+        final var mapping = new AccountMapper.Mapping("Id", "ParentId", "RecordType.DeveloperName", "AccountNumber",
+                "Name", Map.of("Agency", AccountLevel.AGENCY, "Agreement", AccountLevel.AGREEMENT),
+                "Underwriting_Company__r.Name");
+        final Map<String, Object> company = Map.of("Name", " Big Insurance UW Co ");
+        final List<Map<String, Object>> rows = List.of(
+                Map.of("Id", "001000000000001", "AccountNumber", "AG1", "Underwriting_Company__r", company,
+                        "RecordType", Map.of("DeveloperName", "Agency")),
+                Map.of("Id", "001000000000002", "AccountNumber", "AGR1", "ParentId", "001000000000001",
+                        "Underwriting_Company__r", company, "RecordType", Map.of("DeveloperName", "Agreement")),
+                Map.of("Id", "001000000000003", "AccountNumber", "AGR2", "ParentId", "001000000000001",
+                        "Underwriting_Company__r", Map.of("Name", " "),
+                        "RecordType", Map.of("DeveloperName", "Agreement")));
+
+        final var nodes = AccountMapper.map(rows, mapping).nodes();
+
+        assertNull(nodes.get(0).underwritingCompany());
+        assertEquals("Big Insurance UW Co", nodes.get(1).underwritingCompany());
+        assertNull(nodes.get(2).underwritingCompany());
     }
 }

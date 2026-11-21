@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -17,17 +18,20 @@ import org.jboss.logging.Logger;
 import com.acmeinsurance.ldapsync.SyncConfig;
 import com.acmeinsurance.ldapsync.core.AccountLevel;
 import com.acmeinsurance.ldapsync.core.AccountMapper;
+import com.acmeinsurance.ldapsync.core.AccountNode;
 import com.acmeinsurance.ldapsync.core.AccountTreePlanner;
 import com.acmeinsurance.ldapsync.core.AgentMapper;
 import static com.acmeinsurance.ldapsync.core.Constants.ACME_DEACTIVATED;
 import static com.acmeinsurance.ldapsync.core.Constants.ACME_SALESFORCE_ID;
 import static com.acmeinsurance.ldapsync.core.Constants.ACME_SOURCE;
+import static com.acmeinsurance.ldapsync.core.Constants.ACME_UNDERWRITING_COMPANY_DN;
 import static com.acmeinsurance.ldapsync.core.Constants.CN;
 import static com.acmeinsurance.ldapsync.core.Constants.DISPLAY_NAME;
 import static com.acmeinsurance.ldapsync.core.Constants.OBJECT_CLASS;
 import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_ACCOUNT_ACCESS;
 import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_FEATURE_ACCESS;
 import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_SYNC_MANAGED;
+import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_UNDERWRITING_COMPANY;
 import static com.acmeinsurance.ldapsync.core.Constants.OC_ACME_USER;
 import static com.acmeinsurance.ldapsync.core.Constants.OC_INET_ORG_PERSON;
 import static com.acmeinsurance.ldapsync.core.Constants.SOURCE_SALESFORCE;
@@ -69,7 +73,8 @@ import jakarta.inject.Provider;
 public class SalesforceSyncService {
 
     private static final Logger LOG = Logger.getLogger(SalesforceSyncService.class);
-    private static final String[] ACCOUNT_ATTRS = {OBJECT_CLASS, CN, DISPLAY_NAME, ACME_SALESFORCE_ID, ACME_SOURCE};
+    private static final String[] ACCOUNT_ATTRS = {OBJECT_CLASS, CN, DISPLAY_NAME, ACME_SALESFORCE_ID, ACME_SOURCE,
+        ACME_UNDERWRITING_COMPANY_DN};
 
     private final SyncConfig cfg;
     private final SalesforceReader salesforce;
@@ -134,7 +139,11 @@ public class SalesforceSyncService {
 
         final Map<String, AccountLevel> types = new LinkedHashMap<>();
         a.recordTypes().forEach((sfType, level) -> types.put(sfType, AccountLevel.parse(level)));
-        final var mapping = new AccountMapper.Mapping(a.idField(), a.parentField(), a.levelField(), a.cnField(), a.nameField(), types);
+        final var mapping = new AccountMapper.Mapping(a.idField(), a.parentField(), a.levelField(), a.cnField(),
+                a.nameField(), types, a.underwritingCompanyField().orElse(null));
+        // Underwriting company name (lower case) to DN; null when the sync does not manage them.
+        final Map<String, String> companies = a.underwritingCompanyField().isPresent()
+                ? loadUnderwritingCompanies(dir) : null;
 
         final List<Map<String, Object>> rows = salesforce.query(a.soql());
         r.set("accounts.sourceRows", rows.size());
@@ -162,7 +171,7 @@ public class SalesforceSyncService {
                     continue;
                 }
                 try {
-                    if (!upsertAccount(dir, p, existing.get(id), r)) {
+                    if (!upsertAccount(dir, p, existing.get(id), companies, r)) {
                         failed.add(id);
                     }
                 } catch (final LDAPException e) {
@@ -176,13 +185,13 @@ public class SalesforceSyncService {
 
     /** @return false if the record could not be written (its children are then skipped) */
     private boolean upsertAccount(final LdapDirectory dir, final AccountTreePlanner.Planned p,
-                                  final SearchResultEntry existing,
+                                  final SearchResultEntry existing, final Map<String, String> companies,
                                   final SyncReport r) throws LDAPException {
         final var n = p.node();
         if (existing == null) {
             final SearchResultEntry atDn = dir.get(p.dn(), ACCOUNT_ATTRS);
             if (atDn != null) {
-                return adoptAccount(dir, p, atDn, r);
+                return adoptAccount(dir, p, atDn, companies, r);
             }
             final Entry e = new Entry(p.dn());
             e.addAttribute(OBJECT_CLASS, n.level().objectClass(), OC_ACME_SYNC_MANAGED);
@@ -191,6 +200,10 @@ public class SalesforceSyncService {
             e.addAttribute(ACME_SOURCE, SOURCE_SALESFORCE);
             if (n.displayName() != null) {
                 e.addAttribute(DISPLAY_NAME, n.displayName());
+            }
+            final Modification company = underwritingCompanyChange(n, null, companies, r);
+            if (company != null) {
+                e.addAttribute(company.getAttribute());
             }
             dir.add(e);
             r.inc("accounts.created");
@@ -215,11 +228,20 @@ public class SalesforceSyncService {
             r.inc(parentChanged ? "accounts.moved" : "accounts.renamed");
             dn = p.dn();
         }
+        final List<Modification> mods = new ArrayList<>();
         final String haveName = existing.getAttributeValue(DISPLAY_NAME);
         if (n.displayName() == null ? haveName != null : !n.displayName().equals(haveName)) {
-            dir.modify(dn, List.of(n.displayName() == null
+            mods.add(n.displayName() == null
                     ? new Modification(ModificationType.DELETE, DISPLAY_NAME)
-                    : new Modification(ModificationType.REPLACE, DISPLAY_NAME, n.displayName())));
+                    : new Modification(ModificationType.REPLACE, DISPLAY_NAME, n.displayName()));
+        }
+        final Modification company = underwritingCompanyChange(n,
+                existing.getAttributeValue(ACME_UNDERWRITING_COMPANY_DN), companies, r);
+        if (company != null) {
+            mods.add(company);
+        }
+        if (!mods.isEmpty()) {
+            dir.modify(dn, mods);
             r.inc("accounts.updated");
         } else {
             r.inc("accounts.unchanged");
@@ -228,7 +250,7 @@ public class SalesforceSyncService {
     }
 
     private boolean adoptAccount(final LdapDirectory dir, final AccountTreePlanner.Planned p,
-                                 final SearchResultEntry atDn,
+                                 final SearchResultEntry atDn, final Map<String, String> companies,
                                  final SyncReport r) throws LDAPException {
         final var n = p.node();
         final String otherId = atDn.getAttributeValue(ACME_SALESFORCE_ID);
@@ -255,9 +277,54 @@ public class SalesforceSyncService {
         if (n.displayName() != null) {
             mods.add(new Modification(ModificationType.REPLACE, DISPLAY_NAME, n.displayName()));
         }
+        final Modification company = underwritingCompanyChange(n,
+                atDn.getAttributeValue(ACME_UNDERWRITING_COMPANY_DN), companies, r);
+        if (company != null) {
+            mods.add(company);
+        }
         dir.modify(p.dn(), mods);
         r.inc("accounts.adopted");
         return true;
+    }
+
+    /**
+     * The change that gives an agreement the underwriting company Salesforce names.
+     *
+     * @param have      the agreement's current acmeUnderwritingCompanyDN, or null
+     * @param companies company name (lower case) to DN; null when the sync does not
+     *                  manage underwriting companies
+     * @return null when nothing changes: not an agreement, not managed, already
+     *         right, or a company that is not in the directory (reported as an
+     *         error; the current value stays)
+     */
+    private Modification underwritingCompanyChange(final AccountNode n, final String have,
+                                                   final Map<String, String> companies, final SyncReport r) {
+        if (companies == null || n.level() != AccountLevel.AGREEMENT) {
+            return null;
+        }
+        if (n.underwritingCompany() == null) {
+            return have == null ? null : new Modification(ModificationType.DELETE, ACME_UNDERWRITING_COMPANY_DN);
+        }
+        final String want = companies.get(n.underwritingCompany().toLowerCase(Locale.ROOT));
+        if (want == null) {
+            r.error("agreement " + n.sfId() + " (" + n.cn() + "): underwriting company '" + n.underwritingCompany()
+                    + "' is not under " + cfg.ldap().underwritingCompaniesDn());
+            return null;
+        }
+        return have != null && LdapDirectory.sameDn(have, want)
+                ? null : new Modification(ModificationType.REPLACE, ACME_UNDERWRITING_COMPANY_DN, want);
+    }
+
+    /** Underwriting companies by cn (lower case); they are maintained by hand, the sync only reads them. */
+    private Map<String, String> loadUnderwritingCompanies(final LdapDirectory dir) throws LDAPException {
+        final Map<String, String> m = new HashMap<>();
+        for (final SearchResultEntry e : dir.searchAll(cfg.ldap().underwritingCompaniesDn(), SearchScope.ONE,
+                Filter.createEqualityFilter(OBJECT_CLASS, OC_ACME_UNDERWRITING_COMPANY), CN)) {
+            for (final String cn : e.getAttributeValues(CN)) {
+                m.put(cn.toLowerCase(Locale.ROOT), e.getDN());
+            }
+        }
+        return m;
     }
 
     /**

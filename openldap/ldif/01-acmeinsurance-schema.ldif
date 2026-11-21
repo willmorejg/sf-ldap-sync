@@ -7,6 +7,10 @@
 # IANA Private Enterprise Number before this goes anywhere permanent.
 #   .1.1.x = attribute types   (.2 to .5 were used by an earlier draft; left unused)
 #   .1.2.x = object classes
+#
+# Agreements may name their underwriting company (acmeUnderwritingCompanyDN),
+# an entry under ou=underwritingCompanies. Added 2026-11-21; an existing server
+# takes it with openldap/migrations/2026-11-21-add-underwriting-companies.sh.
 dn: cn=acmeinsurance,cn=schema,cn=config
 objectClass: olcSchemaConfig
 cn: acmeinsurance
@@ -29,6 +33,11 @@ olcAttributeTypes: ( 1.3.6.1.4.1.99999.1.1.8 NAME 'acmeAccountDN'
   DESC 'DN of an account entry the user is authorized for (multi-valued)'
   EQUALITY distinguishedNameMatch
   SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 )
+olcAttributeTypes: ( 1.3.6.1.4.1.99999.1.1.14 NAME 'acmeUnderwritingCompanyDN'
+  DESC 'DN of the underwriting company of an agreement'
+  EQUALITY distinguishedNameMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.12
+  SINGLE-VALUE )
 olcObjectClasses: ( 1.3.6.1.4.1.99999.1.2.1 NAME 'acmeUser'
   DESC 'Any Acme Insurance user; carries the user type'
   SUP top AUXILIARY
@@ -51,10 +60,16 @@ olcObjectClasses: ( 1.3.6.1.4.1.99999.1.2.5 NAME 'acmeAgencyAccount'
   SUP acmeAccount STRUCTURAL )
 olcObjectClasses: ( 1.3.6.1.4.1.99999.1.2.6 NAME 'acmeAgreementAccount'
   DESC 'Agreement; child of an agency, parent of books'
-  SUP acmeAccount STRUCTURAL )
+  SUP acmeAccount STRUCTURAL
+  MAY acmeUnderwritingCompanyDN )
 olcObjectClasses: ( 1.3.6.1.4.1.99999.1.2.7 NAME 'acmeBookAccount'
   DESC 'Book; child of an agreement'
   SUP acmeAccount STRUCTURAL )
 olcObjectClasses: ( 1.3.6.1.4.1.99999.1.2.8 NAME 'acmeClientAccount'
   DESC 'Client; internally generated ID, outside the agency hierarchy'
   SUP acmeAccount STRUCTURAL )
+olcObjectClasses: ( 1.3.6.1.4.1.99999.1.2.14 NAME 'acmeUnderwritingCompany'
+  DESC 'An underwriting company; agreements point at it with acmeUnderwritingCompanyDN'
+  SUP top STRUCTURAL
+  MUST cn
+  MAY ( displayName $ description ) )

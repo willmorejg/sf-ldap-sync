@@ -41,6 +41,7 @@ public final class TestDirectory implements AutoCloseable {
     public static final String AGENCIES = "ou=agencies," + ACCOUNTS;
     public static final String CLIENTS = "ou=clients," + ACCOUNTS;
     public static final String FEATURES = "ou=features," + BASE;
+    public static final String UNDERWRITING_COMPANIES = "ou=underwritingCompanies," + BASE;
     public static final String AGENT_POLICY = "cn=agents,ou=policies," + BASE;
 
     private static final String ADMIN_DN = "cn=Directory Manager";
@@ -71,13 +72,14 @@ public final class TestDirectory implements AutoCloseable {
                 configSchema(ldif.resolve("03-acmeinsurance-auth-schema.ldif")),
                 new Schema(new Entry("cn=ppolicy-test", new Attribute("attributeTypes", PPOLICY_ATTRS)))));
         config.addAdditionalBindCredentials(ADMIN_DN, ADMIN_PW);
-        config.setReferentialIntegrityAttributes("acmeAccountDN", "acmeFeatureDN");
+        config.setReferentialIntegrityAttributes("acmeAccountDN", "acmeFeatureDN", "acmeUnderwritingCompanyDN");
         config.setListenerConfigs(InMemoryListenerConfig.createLDAPConfig("default", 0));
         config.setEnforceSingleStructuralObjectClass(true);
 
         server = new InMemoryDirectoryServer(config);
         final DN policies = new DN("ou=policies," + BASE);
-        for (final String file : List.of("20-dit.ldif", "32-sample-features.ldif")) {
+        for (final String file : List.of("20-dit.ldif", "32-sample-features.ldif",
+                "35-sample-underwriting-companies.ldif")) {
             try (LDIFReader r = new LDIFReader(ldif.resolve(file).toFile())) {
                 Entry e;
                 while ((e = r.readEntry()) != null) {

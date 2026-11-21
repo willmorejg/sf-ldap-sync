@@ -31,6 +31,8 @@ public enum Constants {
     public static final String ACME_FEATURE_DN = "acmeFeatureDN";
     public static final String ACME_POLICY_NUMBER = "acmePolicyNumber";
     public static final String ACME_DEACTIVATED = "acmeDeactivated";
+    /** On agreements: DN of the underwriting company, an entry under ou=underwritingCompanies. */
+    public static final String ACME_UNDERWRITING_COMPANY_DN = "acmeUnderwritingCompanyDN";
     public static final String ACME_REDIRECT_URI = "acmeRedirectUri";
     public static final String ACME_GRANT_TYPE = "acmeGrantType";
 
@@ -134,6 +136,8 @@ public enum Constants {
     public static final String CLAIM_ACCOUNTS_AGREEMENTS = "agreements";
     public static final String CLAIM_ACCOUNTS_BOOKS = "books";
     public static final String CLAIM_ACCOUNTS_CLIENTS = "clients";
+    /** Agreement path to the cn of its underwriting company. */
+    public static final String CLAIM_ACCOUNTS_UNDERWRITING_COMPANIES = "underwriting_companies";
 
     // ---- HTTP and crypto -----------------------------------------------------
 

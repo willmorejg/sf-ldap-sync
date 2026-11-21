@@ -12,9 +12,11 @@ public final class AccountMapper {
      *
      * @param recordTypes record-type value (e.g. "Agency") to level; records whose
      *                    type is not listed are skipped
+     * @param underwritingCompanyField agreement field holding the underwriting company's
+     *                    name; null when the sync does not manage underwriting companies
      */
     public record Mapping(String idField, String parentField, String levelField, String cnField,
-                          String nameField, Map<String, AccountLevel> recordTypes) {
+                          String nameField, Map<String, AccountLevel> recordTypes, String underwritingCompanyField) {
     }
 
     public record Result(List<AccountNode> nodes, int skipped, List<String> warnings) {
@@ -51,8 +53,15 @@ public final class AccountMapper {
                 warnings.add(id + ": " + m.cnField() + " is empty; using the Salesforce ID as cn");
                 cn = id;
             }
-            nodes.add(new AccountNode(id, level, cn, SalesforceIds.normalize(parent), Records.path(r, m.nameField())));
+            final String company = level == AccountLevel.AGREEMENT
+                    ? trimToNull(Records.path(r, m.underwritingCompanyField())) : null;
+            nodes.add(new AccountNode(id, level, cn, SalesforceIds.normalize(parent), Records.path(r, m.nameField()),
+                    company));
         }
         return new Result(nodes, skipped, warnings);
+    }
+
+    private static String trimToNull(final String s) {
+        return s == null || s.isBlank() ? null : s.trim();
     }
 }

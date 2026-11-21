@@ -53,6 +53,12 @@ Accounts are written level by level (agency, then agreement, then book), and the
 directory is re-read before each level, so a child is always placed under its
 parent's current DN. If a record can't be written, its children are skipped.
 
+When `sync.accounts.underwriting-company-field` is set, the sync also reads the
+underwriting companies (maintained by hand) and gives each agreement the company
+Salesforce names. A name that matches no company is reported, and the
+agreement keeps its current value. When the field is unset, the sync never
+touches `acmeUnderwritingCompanyDN`.
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -66,6 +72,10 @@ sequenceDiagram
     SF-->>S: Account rows (queryMore paging)
     S->>P: map rows by record type, plan tree under ou=agencies
     P-->>S: ordered plan + rejected records (reported as errors)
+    opt underwriting-company-field set
+        S->>L: search acmeUnderwritingCompany under ou=underwritingCompanies
+        L-->>S: company name to DN index
+    end
 
     loop each level: agency, agreement, book
         S->>L: search acmeSalesforceId=* under ou=agencies
@@ -74,7 +84,7 @@ sequenceDiagram
             alt parent failed earlier
                 S->>S: skip, report error
             else not in directory, nothing at target DN
-                S->>L: add entry (acmeSyncManaged, acmeSource=salesforce)
+                S->>L: add entry (acmeSyncManaged, acmeSource=salesforce, agreement's company DN)
             else not in directory, hand-made entry at target DN
                 alt sync.safety.adopt-unowned=true
                     S->>L: modify: add acmeSalesforceId, acmeSource
@@ -87,8 +97,8 @@ sequenceDiagram
                 opt DN changed (cn or parent changed)
                     S->>L: modifyDN (rename or move)
                 end
-                opt displayName changed
-                    S->>L: modify displayName
+                opt displayName or agreement's company changed
+                    S->>L: modify displayName, acmeUnderwritingCompanyDN
                 end
             end
         end
@@ -106,6 +116,11 @@ sequenceDiagram
         end
     end
 ```
+
+An unknown company name is reported as an error, and the agreement keeps its
+company. The constraint overlay would refuse any DN that is not a company under
+`ou=underwritingCompanies`, and refint rewrites or clears an agreement's value
+when its company is renamed or deleted.
 
 ## Full sync: brokers and agents
 

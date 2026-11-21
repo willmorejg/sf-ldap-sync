@@ -36,10 +36,12 @@ Further documentation, including sequence diagrams of every flow, is in [docs/](
 ├── openldap/
 │   ├── Containerfile, entrypoint.sh   first start builds cn=config + tree from ldif/
 │   ├── smoke-test.sh                  checks the overlays/ACLs the sync relies on
+│   ├── migrations/                    one-off scripts that bring an existing server up to date
 │   ├── phpldapadmin/                  config.php, nginx site, php.ini for the web UI
 │   └── ldif/
 │       ├── 00-config-global.ldif      modules
-│       ├── 01-acmeinsurance-schema.ldif   acmeUser, acmeAccountAccess, acmeMemberAccess, acmeAccount...
+│       ├── 01-acmeinsurance-schema.ldif   acmeUser, acmeAccountAccess, acmeMemberAccess, acmeAccount...,
+│       │                                  acmeUnderwritingCompany, acmeUnderwritingCompanyDN (agreements)
 │       ├── 02-acmeinsurance-sync-schema.ldif  NEW: acmeSource, acmeDeactivated, acmeSyncManaged
 │       ├── 03-acmeinsurance-auth-schema.ldif  NEW: acmeFeature, acmePermission, acmeFeatureDN, acmeOAuthClient
 │       ├── 10-config-db.ldif          mdb, indexes, limits, ACLs, ppolicy/unique/refint/constraint
@@ -48,7 +50,8 @@ Further documentation, including sequence diagrams of every flow, is in [docs/](
 │       ├── 31-sample-agencies.ldif    AG0042 sample tree + one agent (LOAD_SAMPLE_AGENCIES=true; not with the sync)
 │       ├── 32-sample-features.ldif    quoting > read-quotes, write-quotes
 │       ├── 33-sample-oauth-public.ldif        demo-spa (PKCE) client (LOAD_SAMPLES=true)
-│       └── 34-sample-oauth-confidential.ldif  demo-app client (LOAD_SAMPLES=true + OAUTH_DEMO_CLIENT_SECRET)
+│       ├── 34-sample-oauth-confidential.ldif  demo-app client (LOAD_SAMPLES=true + OAUTH_DEMO_CLIENT_SECRET)
+│       └── 35-sample-underwriting-companies.ldif  two companies (LOAD_SAMPLES or LOAD_SAMPLE_AGENCIES)
 ├── sync/
 │   ├── build.gradle, settings.gradle, gradle.properties, gradlew, Containerfile
 │   └── src/main/
@@ -144,6 +147,10 @@ All of these are settings in `application.properties`, not code:
 - **Agent's agency:** agents are partner (Experience Cloud) users, so the agency is `Contact.AccountId`. If agents are standard users, point `sync.agents.agency-field` at the User field that holds the agency.
 - **Agreement and book grants:** these come from `AccountContactRelation` if that feature is on (commented out by default). If Acme Insurance keeps them in a custom junction object, change `entitlement-soql` and its two field names.
 - **Login name:** `uid` is the Salesforce Username. `FederationIdentifier` is an alternative.
+- **Underwriting company:** off by default. To have the sync set it, point
+  `sync.accounts.underwriting-company-field` at the agreement field holding the company's name, for example
+  `Underwriting_Company__r.Name`, and add that field to `sync.accounts.soql`. The name must match the `cn` of a
+  company under `ou=underwritingCompanies` (case does not matter).
 
 ## How it behaves
 
@@ -208,7 +215,8 @@ rename. `aud` is `AUTH_AUDIENCE` (default `acmeinsurance`). It carries `preferre
   "agencies":   ["AG0042"],
   "agreements": ["AG0042/AGR-0042-01"],
   "books":      ["AG0042/AGR-0042-02/BK-000340"],
-  "clients":    ["100234"]
+  "clients":    ["100234"],
+  "underwriting_companies": { "AG0042/AGR-0042-01": "Big Insurance UW Co" }
 }
 ```
 
@@ -216,6 +224,11 @@ Grants are listed as held, not expanded. Agreements and books are paths from the
 server allows book `AG0042/AGR-0042-01/BK-000311` when the path equals a grant or starts with a grant
 followed by `/`. A feature grant lists every permission under that feature; a feature with no permissions
 (a plain role such as `csr`) appears with an empty list.
+
+`accounts.underwriting_companies` maps each agreement the grants cover to the `cn` of its underwriting company.
+That includes a held agreement, the agreement above a held book, and every agreement directly under a held
+agency. Agreements without a company are left out. It is reference data, not a grant: the grant lists stay as
+held. An agency with many agreements makes the token correspondingly larger.
 
 **Refresh.** A refresh re-reads the user, so grant changes show up in the next access token. It is refused if
 the user has since been deactivated or locked, has a pending reset, or changed their password after signing
@@ -231,6 +244,23 @@ naming either the feature (all of its permissions,
 including ones added later) or one permission. As with accounts, the constraint overlay refuses a DN that is
 not a feature or permission, and refint cleans up deletes and renames. Users cannot change their own grants.
 The sync never touches `acmeFeatureDN`.
+
+**Underwriting companies.** An agreement names its underwriting company in `acmeUnderwritingCompanyDN`
+(single-valued, allowed only on `acmeAgreementAccount`). The possible values are `acmeUnderwritingCompany`
+entries under `ou=underwritingCompanies`, maintained as the rootdn (or in phpLDAPadmin):
+
+```ldif
+dn: cn=Big Insurance UW Co,ou=underwritingCompanies,dc=acmeinsurance,dc=com
+objectClass: acmeUnderwritingCompany
+cn: Big Insurance UW Co
+displayName: Big Insurance Underwriting Company
+```
+
+The constraint overlay refuses a value that is not one of these companies. Refint rewrites agreements when a
+company is renamed and clears them when it is deleted. svc-sync and svc-auth can read the companies but not
+change them. The Salesforce sync sets the value only when `sync.accounts.underwriting-company-field` is
+configured. A company name it can't find is reported as an error, and the agreement keeps its value. Without
+the field, values set by hand are kept.
 
 **Registering a client** (as the rootdn). A `acmeOAuthClient` under `ou=oauth-clients,ou=services`, where `cn` is
 the `client_id`:
@@ -310,10 +340,16 @@ For the auth add-on, also:
 
 See `10-config-db.ldif` for the exact values.
 
+A server built before 2026-11-21 has no underwriting companies. Run
+`openldap/migrations/2026-11-21-add-underwriting-companies.sh` inside the container (instructions at its top).
+It adds the schema, the index, the refint and constraint settings, and `ou=underwritingCompanies`. It is safe to
+run again. Then load your companies as the rootdn.
+
 ## What has been tested
 
 - **OpenLDAP config:** loaded into a real OpenLDAP 2.6.10.
-- **Smoke test:** `smoke-test.sh` passes 25/25 (last run 2026-11-20, slapd 2.6.10 in the openldap image). It covers:
+- **Smoke test:** `smoke-test.sh` passes 32/32 (last run 2026-11-21, slapd 2.6.10 in the openldap image, on a fresh load
+  and on a server migrated with the 2026-11-21 script). The 7 underwriting checks need `LDAP_ADMIN_PASSWORD`. It covers:
   - uniqueness
   - the existence constraints on account and feature grants
   - the `acmeUserType` value constraint
@@ -321,9 +357,11 @@ See `10-config-db.ldif` for the exact values.
   - lock/unlock and password reset via ppolicy
   - the ACLs (users cannot change their own grants or user type)
   - OAuth clients: a confidential client binds, there is no lockout, svc-auth can tell confidential from public clients, and it cannot read secrets
-- **Token service:** `cd auth && ./gradlew build` runs 16 tests against an in-memory directory. They cover claims for each user type, the password, code+PKCE and refresh grants, client authentication, and the reset/change-password flow (ppolicy is simulated). The service was also run against real slapd 2.6.10 (2026-11-19). It checked the real ppolicy controls (reset forces a change, a too-short new password is rejected), the claims for `sample.agent`, and that a ppolicy lockout blocks both sign-in and refresh.
+  - underwriting companies: only companies are accepted, only agreements hold one, svc-auth can read them, and refint follows a company's rename and delete
+- **Token service:** `cd auth && ./gradlew build` runs 17 tests against an in-memory directory. They cover claims for each user type (including underwriting companies), the password, code+PKCE and refresh grants, client authentication, and the reset/change-password flow (ppolicy is simulated). The service was also run against real slapd 2.6.10 (2026-11-19). It checked the real ppolicy controls (reset forces a change, a too-short new password is rejected), the claims for `sample.agent`, and that a ppolicy lockout blocks both sign-in and refresh. On 2026-11-21 a live password-grant token for an agent
+holding an agency listed the company of that agency's agreement.
 - **Paged searches:** with the limits above, paging returns more than 1000 entries.
-- **Build and tests:** `cd sync && ./gradlew build` (Gradle 9.9.1 wrapper, Groovy DSL, needs JDK 25; Gradle can't run on JDK 21 for this build). It runs 45 tests: unit tests for `core/`, plus `PersonWriter`, `SalesforceSyncService` and `CsvIntakeService` integration tests against an in-memory LDAP server loaded with the real schema from `openldap/ldif`. The container build skips tests, because its context is `sync/` only.
+- **Build and tests:** `cd sync && ./gradlew build` (Gradle 9.9.1 wrapper, Groovy DSL, needs JDK 25; Gradle can't run on JDK 21 for this build). It runs 49 tests: unit tests for `core/`, plus `PersonWriter`, `SalesforceSyncService` and `CsvIntakeService` integration tests against an in-memory LDAP server loaded with the real schema from `openldap/ldif`. The container build skips tests, because its context is `sync/` only.
 - **App startup:** with `SF_ENABLED=false` the sync container runs on CSV intake alone (the 4 sample people load). With `SF_ENABLED=true` and no credentials it also starts and serves `/sync/salesforce` (a sync run without credentials has not been tried).
 - **OpenAPI (2026-11-20):** sync serves the Camel-generated spec at `/openapi` and Swagger UI shows it, with both operations listed whatever `SF_ENABLED` is. Checked both ways: `SF_ENABLED=true` returns the report, `false` returns 503 JSON. auth serves `/q/openapi`; `OPENAPI_ENABLED=false` turns it off.
 - **To confirm against a real org:**

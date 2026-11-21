@@ -4,6 +4,7 @@ import static com.acmeinsurance.ldapsync.testsupport.TestDirectory.AGENCIES;
 import static com.acmeinsurance.ldapsync.testsupport.TestDirectory.AGENTS;
 import static com.acmeinsurance.ldapsync.testsupport.TestDirectory.CLIENTS;
 import static com.acmeinsurance.ldapsync.testsupport.TestDirectory.FEATURES;
+import static com.acmeinsurance.ldapsync.testsupport.TestDirectory.UNDERWRITING_COMPANIES;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -28,6 +29,8 @@ import com.acmeinsurance.ldapsync.core.SalesforceIds;
 import com.acmeinsurance.ldapsync.ldap.LdapDirectory;
 import com.acmeinsurance.ldapsync.ldap.PersonWriter;
 import com.acmeinsurance.ldapsync.testsupport.TestDirectory;
+import com.unboundid.ldap.sdk.Modification;
+import com.unboundid.ldap.sdk.ModificationType;
 import com.unboundid.ldap.sdk.SearchResultEntry;
 
 import io.smallrye.config.PropertiesConfigSource;
@@ -61,6 +64,11 @@ final class SalesforceSyncServiceTest {
     private static final String BK1_DN = "cn=BK1," + AGR1_DN;
     private static final String ADA_DN = "uid=ada@example.com," + AGENTS;
     private static final String BOB_DN = "uid=bob@example.com," + AGENTS;
+    /** From 35-sample-underwriting-companies.ldif. */
+    private static final String BIG_UW = LdapDirectory.normalize("cn=Big Insurance UW Co," + UNDERWRITING_COMPANIES);
+    private static final String SECOND_UW =
+            LdapDirectory.normalize("cn=Second Mutual Underwriters," + UNDERWRITING_COMPANIES);
+    private static final String UW_FIELD = "Underwriting_Company__r.Name";
 
     private TestDirectory ldap;
     private LdapDirectory dir;
@@ -288,6 +296,59 @@ final class SalesforceSyncServiceTest {
     }
 
     @Test
+    void setsTheUnderwritingCompanyOfAgreementsByName() throws Exception {
+        props.put("sync.accounts.underwriting-company-field", UW_FIELD);
+        sf.underwriting(AGR1, "big insurance uw co");
+        sf.underwriting(AG1, "Second Mutual Underwriters");
+        final Map<String, Object> report = sync();
+
+        assertNoErrors(report);
+        assertEquals(BIG_UW, company(AGR1_DN));
+        assertNull(company(AGR2_DN));
+        assertNull(company(AG1_DN), "only agreements hold an underwriting company");
+
+        sf.underwriting(AGR1, "Second Mutual Underwriters");
+        sf.underwriting(AGR2, "Big Insurance UW Co");
+        assertNoErrors(sync());
+        assertEquals(SECOND_UW, company(AGR1_DN));
+        assertEquals(BIG_UW, company(AGR2_DN));
+
+        sf.underwriting(AGR1, null);
+        final Map<String, Object> third = sync();
+        assertNoErrors(third);
+        assertNull(company(AGR1_DN));
+        assertEquals(1, count(third, "accounts.updated"));
+        assertEquals(4, count(third, "accounts.unchanged"));
+    }
+
+    @Test
+    void keepsTheUnderwritingCompanyWhenSalesforceNamesAnUnknownOne() throws Exception {
+        props.put("sync.accounts.underwriting-company-field", UW_FIELD);
+        sf.underwriting(AGR1, "Big Insurance UW Co");
+        sync();
+        sf.underwriting(AGR1, "No Such Underwriter");
+        final Map<String, Object> report = sync();
+
+        assertTrue(errors(report).stream().anyMatch(e -> e.contains("'No Such Underwriter' is not under")),
+                errors(report).toString());
+        assertEquals(BIG_UW, company(AGR1_DN));
+        assertNotNull(ldap.get(BK1_DN), "the agreement's books are still written");
+    }
+
+    @Test
+    void leavesTheUnderwritingCompanyAloneWhenNoFieldIsConfigured() throws Exception {
+        sf.underwriting(AGR1, "Second Mutual Underwriters");
+        sync();
+        ldap.server().modify(AGR1_DN, new Modification(ModificationType.REPLACE,
+                Constants.ACME_UNDERWRITING_COMPANY_DN, BIG_UW));
+        final Map<String, Object> report = sync();
+
+        assertNoErrors(report);
+        assertEquals(BIG_UW, company(AGR1_DN));
+        assertEquals(5, count(report, "accounts.unchanged"));
+    }
+
+    @Test
     void dryRunWritesNothing() throws Exception {
         props.put("sync.safety.dry-run", "true");
         try (LdapDirectory dry = ldap.connect(true)) {
@@ -311,6 +372,12 @@ final class SalesforceSyncServiceTest {
                 .withSources(new PropertiesConfigSource(props, "test", 500))
                 .build();
         return new SalesforceSyncService(config.getConfigMapping(SyncConfig.class), sf, () -> directory);
+    }
+
+    /** The agreement's acmeUnderwritingCompanyDN, normalized; null when it has none. */
+    private String company(final String dn) throws Exception {
+        final String value = ldap.get(dn).getAttributeValue(Constants.ACME_UNDERWRITING_COMPANY_DN);
+        return value == null ? null : LdapDirectory.normalize(value);
     }
 
     private static String id(final String prefix, final int n) {
@@ -375,6 +442,11 @@ final class SalesforceSyncServiceTest {
             r.put("ContactId", contactId);
             r.put("Contact", Map.of("AccountId", agencyId));
             users.put(id, r);
+        }
+
+        /** Sets (or with null clears) the Underwriting_Company__r.Name of an account record. */
+        void underwriting(final String id, final String companyName) {
+            accounts.get(id).put("Underwriting_Company__r", companyName == null ? null : Map.of("Name", companyName));
         }
 
         void entitlement(final String contactId, final String accountId) {

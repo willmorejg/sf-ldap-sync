@@ -30,6 +30,7 @@ olcDbIndex: uid,mail,cn eq
 olcDbIndex: acmeAccountDN,acmePolicyNumber,acmeSalesforceId eq
 olcDbIndex: acmeSource,acmeUserType eq
 olcDbIndex: acmeFeatureDN,entryUUID eq
+olcDbIndex: acmeUnderwritingCompanyDN eq
 # The service accounts read whole subtrees (paged); the 1000-entry default
 # would silently truncate a full sync. Everyone else keeps the default.
 olcLimits: {0}dn.exact="cn=svc-sync,ou=services,dc=acmeinsurance,dc=com" size=unlimited time=unlimited
@@ -96,15 +97,17 @@ olcUniqueURI: ldap:///ou=accounts,dc=acmeinsurance,dc=com?acmeSalesforceId?sub
 # Referential integrity: when an account entry is deleted, renamed or moved
 # (including a whole agency or agreement subtree), every user's acmeAccountDN
 # values are removed or rewritten to match. The same for features and
-# permissions and acmeFeatureDN.
+# permissions and acmeFeatureDN, and for underwriting companies and an
+# agreement's acmeUnderwritingCompanyDN.
 dn: olcOverlay={2}refint,olcDatabase={1}mdb,cn=config
 objectClass: olcOverlayConfig
 objectClass: olcRefintConfig
 olcOverlay: {2}refint
-olcRefintAttribute: acmeAccountDN acmeFeatureDN
+olcRefintAttribute: acmeAccountDN acmeFeatureDN acmeUnderwritingCompanyDN
 
 # A acmeAccountDN value must be the DN of an existing account entry, a
-# acmeFeatureDN value the DN of an existing feature or permission, and
+# acmeFeatureDN value the DN of an existing feature or permission, a
+# acmeUnderwritingCompanyDN value the DN of an existing underwriting company, and
 # acmeUserType must be one of the four user types.
 dn: olcOverlay={3}constraint,olcDatabase={1}mdb,cn=config
 objectClass: olcOverlayConfig
@@ -114,5 +117,7 @@ olcConstraintAttribute: acmeAccountDN uri
   ldap:///ou=accounts,dc=acmeinsurance,dc=com?entryDN?sub?(objectClass=acmeAccount)
 olcConstraintAttribute: acmeFeatureDN uri
   ldap:///ou=features,dc=acmeinsurance,dc=com?entryDN?sub?(|(objectClass=acmeFeature)(objectClass=acmePermission))
+olcConstraintAttribute: acmeUnderwritingCompanyDN uri
+  ldap:///ou=underwritingCompanies,dc=acmeinsurance,dc=com?entryDN?one?(objectClass=acmeUnderwritingCompany)
 olcConstraintAttribute: acmeUserType regex "^(internal|agent|member|other)$"
 

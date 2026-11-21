@@ -20,6 +20,8 @@ The schema follows the earlier design: `acmeUser`, `acmeAccountAccess` (holding
 `acmeAccountDN` grants), `acmeMemberAccess` (holding `acmePolicyNumber`), and the
 `acmeAccount` subclasses. This project adds `acmeSource`, `acmeDeactivated` and the
 `acmeSyncManaged` object class (see `openldap/ldif/02-acmeinsurance-sync-schema.ldif`).
+`01` also defines `acmeUnderwritingCompanyDN` (allowed only on `acmeAgreementAccount`, single-valued) and the
+`acmeUnderwritingCompany` class, whose entries under `ou=underwritingCompanies` are the possible values (2026-11-21).
 `03-acmeinsurance-auth-schema.ldif` adds `acmeFeature`/`acmePermission` (under `ou=features`), the
 `acmeFeatureAccess` auxiliary class with `acmeFeatureDN`, and `acmeOAuthClient` (under
 `ou=oauth-clients,ou=services`).
@@ -27,10 +29,10 @@ The schema follows the earlier design: `acmeUser`, `acmeAccountAccess` (holding
 ## Status
 | Part | State |
 |---|---|
-| `openldap/` (config LDIFs, entrypoint, Containerfile) | Loaded and exercised against a real slapd 2.6.10; `openldap/smoke-test.sh` passes 25/25 (rerun 2026-11-20 on the Acme fresh load) |
+| `openldap/` (config LDIFs, entrypoint, Containerfile) | Loaded and exercised against a real slapd 2.6.10; `openldap/smoke-test.sh` passes 32/32 (2026-11-21, on a fresh load and on the migrated compose volumes) |
 | `sync/src/main/java/.../core/` (pure logic) | Compiles cleanly with `-Xlint:all`; 11 unit tests pass |
-| `sync/.../ldap`, `salesforce`, `csv`, `SyncConfig`, Gradle build, routes | Compiles on Java 25 / Quarkus 3.40.1 LTS (Camel 4.22). 45 tests pass, including the in-memory LDAP integration tests (CSV intake per user type since 2026-11-20). Starts without Salesforce credentials; with `SF_ENABLED=false` only CSV intake runs. OpenAPI from the Camel REST DSL at `/openapi`, Swagger UI at `/q/swagger-ui` (2026-11-20) |
-| `auth/` (token service) | 16 tests pass (in-memory LDAP, ppolicy simulated by an interceptor; claims per user type). Run end to end against real slapd 2.6.10 on 2026-11-19: reset forces a password change on the login page, claims correct, lockout blocks sign-in and refresh. Image builds. OpenAPI at `/q/openapi` from annotations (2026-11-20) |
+| `sync/.../ldap`, `salesforce`, `csv`, `SyncConfig`, Gradle build, routes | Compiles on Java 25 / Quarkus 3.40.1 LTS (Camel 4.22). 49 tests pass, including the in-memory LDAP integration tests (CSV intake per user type since 2026-11-20). Starts without Salesforce credentials; with `SF_ENABLED=false` only CSV intake runs. OpenAPI from the Camel REST DSL at `/openapi`, Swagger UI at `/q/swagger-ui` (2026-11-20) |
+| `auth/` (token service) | 17 tests pass (in-memory LDAP, ppolicy simulated by an interceptor; claims per user type). Run end to end against real slapd 2.6.10 on 2026-11-19: reset forces a password change on the login page, claims correct, lockout blocks sign-in and refresh. Image builds. OpenAPI at `/q/openapi` from annotations (2026-11-20) |
 | phpLDAPadmin (in the openldap image) | 1.2.6.7 from Ubuntu, on nginx + php8.3-fpm, port 8090 on the host. Checked 2026-11-20: admin login, entry/feature/client views, schema list, tree |
 | Container images and compose | Built and running under podman-compose 1.5. Fresh load with the Acme names on 2026-11-20: openldap healthy, smoke test 25/25, CSV samples loaded (4 people), auth and sync up. Salesforce not yet exercised |
 | Documentation | `docs/`: index, schema requirements, Mermaid sequence diagrams (2026-11-20); all diagrams render with Mermaid 11 |
@@ -103,7 +105,9 @@ The schema follows the earlier design: `acmeUser`, `acmeAccountAccess` (holding
 
 - Token service: it only reads, as svc-auth, and checks passwords by binding as the user, so
   ppolicy stays authoritative. It never writes, except a user's own password change. Grants in
-  tokens are as held (not expanded); agreements and books are agency-rooted paths. A refresh
+  tokens are as held (not expanded); agreements and books are agency-rooted paths.
+  `accounts.underwriting_companies` (agreement path to company cn) is reference data, not a grant: it covers held
+  agreements, the agreement above a held book and the agreements directly under a held agency (2026-11-21). A refresh
   re-reads LDAP and is refused for a locked, deactivated or reset user, or after a password
   change. svc-auth has `search` (not `read`) on client `userPassword`, only under
   `ou=oauth-clients`, to tell confidential clients from public ones. Keep that ACL ahead of the
@@ -126,6 +130,11 @@ The schema follows the earlier design: `acmeUser`, `acmeAccountAccess` (holding
   Apache. Keep `pla_password_hash` empty (clear), so slapd hashes with Argon2 under ppolicy.
   Two PHP 8.3 workarounds: `common.php` is patched to leave out `E_DEPRECATED`, and the host is
   set as an `ldap://` URI with port 0. The image build runs `nginx -t`.
+- Underwriting companies are maintained by hand (rootdn); svc-sync and svc-auth only read `ou=underwritingCompanies`.
+  The Salesforce sync touches an agreement's `acmeUnderwritingCompanyDN` only when
+  `sync.accounts.underwriting-company-field` is set; an unknown company name is an error and the value is kept.
+  Servers built before 2026-11-21 take `openldap/migrations/2026-11-21-add-underwriting-companies.sh`
+  (idempotent; the compose volumes have had it applied).
 - Recreating only openldap under podman-compose fails while sync/auth depend on it: remove
   sync, auth, then openldap (`podman rm -f`), then `podman-compose up -d`. Volumes are kept.
 

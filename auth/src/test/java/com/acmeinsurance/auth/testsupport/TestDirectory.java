@@ -80,14 +80,15 @@ public final class TestDirectory implements AutoCloseable {
                 configSchema(ldif.resolve("03-acmeinsurance-auth-schema.ldif")),
                 new Schema(new Entry("cn=ppolicy-test", new Attribute("attributeTypes", PPOLICY_ATTRS)))));
         config.addAdditionalBindCredentials(ADMIN_DN, ADMIN_PW);
-        config.setReferentialIntegrityAttributes("acmeAccountDN", "acmeFeatureDN");
+        config.setReferentialIntegrityAttributes("acmeAccountDN", "acmeFeatureDN", "acmeUnderwritingCompanyDN");
         config.setListenerConfigs(InMemoryListenerConfig.createLDAPConfig("default", 0));
         config.setEnforceSingleStructuralObjectClass(true);
         config.addInMemoryOperationInterceptor(new PolicyStandIn());
 
         server = new InMemoryDirectoryServer(config);
         final DN policies = new DN("ou=policies," + BASE);
-        for (final String file : List.of("20-dit.ldif", "30-sample-clients.ldif", "31-sample-agencies.ldif",
+        for (final String file : List.of("20-dit.ldif", "30-sample-clients.ldif",
+                "35-sample-underwriting-companies.ldif", "31-sample-agencies.ldif",
                 "32-sample-features.ldif", "33-sample-oauth-public.ldif", "34-sample-oauth-confidential.ldif")) {
             try (LDIFReader r = new LDIFReader(ldif.resolve(file).toFile())) {
                 Entry e;

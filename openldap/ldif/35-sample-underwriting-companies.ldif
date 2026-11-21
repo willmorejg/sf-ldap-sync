@@ -1,0 +1,20 @@
+# Sample underwriting companies, loaded when LOAD_SAMPLES or LOAD_SAMPLE_AGENCIES
+# is true (the sample agreement AGR-0042-01 names the first one). Replace them
+# with Acme Insurance's real list. Maintained by hand (cn=admin or phpLDAPadmin):
+# the sync only reads this branch.
+#
+# ou=underwritingCompanies
+# |-- cn=Big Insurance UW Co
+# `-- cn=Second Mutual Underwriters
+#
+# An agreement names its company with acmeUnderwritingCompanyDN. The constraint
+# overlay refuses any other DN, and refint rewrites or removes the value when a
+# company is renamed or deleted.
+dn: cn=Big Insurance UW Co,ou=underwritingCompanies,dc=acmeinsurance,dc=com
+objectClass: acmeUnderwritingCompany
+cn: Big Insurance UW Co
+displayName: Big Insurance Underwriting Company
+
+dn: cn=Second Mutual Underwriters,ou=underwritingCompanies,dc=acmeinsurance,dc=com
+objectClass: acmeUnderwritingCompany
+cn: Second Mutual Underwriters
