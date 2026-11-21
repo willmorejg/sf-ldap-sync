@@ -1,0 +1,20 @@
+# The Salesforce sync's HTTP trigger (backend, POST/GET /sync/salesforce). Loaded
+# on first start. The trigger needs an access token whose features claim holds
+# this permission:
+#
+#   ou=features
+#   `-- cn=sync          the directory sync
+#       `-- cn=run-sync      run the Salesforce sync on demand, read its last report
+#
+# Grant it through acmeFeatureDN, for example on an internal user (CSV features
+# column: sync).
+dn: cn=sync,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmeFeature
+cn: sync
+displayName: Directory sync
+description: Salesforce to LDAP sync (backend /sync)
+
+dn: cn=run-sync,cn=sync,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmePermission
+cn: run-sync
+displayName: Run the Salesforce sync

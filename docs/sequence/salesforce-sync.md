@@ -1,14 +1,16 @@
 # Salesforce sync
 
 How Salesforce Accounts and Users reach the directory. All of the logic is in
-`SalesforceSyncService` (`sync/src/main/java/com/acmeinsurance/ldapsync/salesforce/`).
-The Camel routes in `sync/src/main/resources/routes/salesforce-sync.camel.yaml`
+`SalesforceSyncService` (`backend/src/main/java/com/acmeinsurance/sync/salesforce/`).
+The Camel routes in `backend/src/main/resources/routes/salesforce-sync.camel.yaml`
 only decide when it runs. With `SF_ENABLED=false`, none of these routes is created, and
 `/sync/salesforce` answers 503 with a `disabled` status.
 
 The HTTP trigger is a Camel REST DSL endpoint, which forwards to a `direct:` route.
 Camel generates its OpenAPI document from that definition and serves it at
-`http://localhost:8080/openapi`, with Swagger UI at `http://localhost:8080/q/swagger-ui/`.
+`http://localhost:8080/openapi`. The trigger needs an access token from the backend's
+token service whose `features` claim holds `sync: run-sync`; `SyncGuard` checks it
+in-process before anything else, on both the enabled and the disabled routes.
 
 ## Triggers
 
@@ -24,13 +26,23 @@ sequenceDiagram
     participant Op as Operator
     participant SF as Salesforce CDC
     participant D as Debounce timer (2 min)
+    participant G as SyncGuard
     participant S as SalesforceSyncService
 
     Q->>S: fullSync()
     T->>S: fullSync() (once, if run-on-startup)
-    Op->>S: POST /sync/salesforce (REST DSL → direct:salesforce-sync-now) → fullSync()
-    S-->>Op: SyncReport (JSON)
-    Op->>S: GET /sync/salesforce (→ direct:salesforce-sync-last) → lastReport()
+    Op->>G: POST /sync/salesforce, Authorization: Bearer (REST DSL → direct:salesforce-sync-now)
+    G->>G: TokenService.verifyAccess(token): signature, iss, aud, exp, typ at+jwt
+    alt no token, or not valid
+        G-->>Op: 401 {"error": "invalid_token"}, WWW-Authenticate: Bearer
+    else features lack sync: run-sync
+        G-->>Op: 403 {"error": "insufficient_scope"}, WWW-Authenticate: Bearer
+    else allowed
+        G->>S: fullSync() (request headers removed first)
+        S-->>Op: SyncReport (JSON)
+    end
+    Op->>G: GET /sync/salesforce, Authorization: Bearer (→ direct:salesforce-sync-last)
+    G->>S: lastReport() (same checks)
     S-->>Op: last SyncReport
 
     opt sync.cdc.enabled=true

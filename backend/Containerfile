@@ -1,0 +1,37 @@
+# The Acme Insurance backend: token service, directory sync and InsureDirectory (API and
+# Angular app) in one Quarkus app on one port. Build context: the repository root
+#   podman build -f backend/Containerfile .
+# so the image build can use frontend/ and run the tests against openldap/ldif.
+
+# 1. The Angular app (frontend/).
+FROM docker.io/library/node:24-slim AS frontend
+WORKDIR /src/frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npx ng build
+
+# 2. The Quarkus app; processResources copies ../frontend/dist into META-INF/resources.
+FROM docker.io/library/eclipse-temurin:25-jdk AS backend
+WORKDIR /src/backend
+COPY backend/gradlew backend/settings.gradle backend/build.gradle backend/gradle.properties ./
+COPY backend/gradle ./gradle
+RUN ./gradlew --no-daemon -q dependencies > /dev/null || true
+COPY openldap/ldif /src/openldap/ldif
+COPY backend/src ./src
+COPY --from=frontend /src/frontend/dist /src/frontend/dist
+RUN ./gradlew --no-daemon build
+
+# 3. Runtime.
+FROM docker.io/library/eclipse-temurin:25-jre
+WORKDIR /app
+COPY --from=backend /src/backend/build/quarkus-app/ /app/
+# /keys: the token signing key. /data: InsureDirectory's SQLite file (saved queries, audit log).
+# /work/inbox: the CSV drop folder. Mount volumes on all three.
+RUN mkdir -p /keys /data /work/inbox && chown -R 1001:0 /app /keys /data /work && chmod 0700 /keys /data
+USER 1001
+ENV AUTH_SIGNING_KEY_FILE=/keys/signing-key.pem \
+    DIRECTORY_DB=/data/insure-directory.db \
+    CSV_INBOX=/work/inbox
+EXPOSE 8080
+ENTRYPOINT ["java", "-Dquarkus.http.host=0.0.0.0", "-jar", "/app/quarkus-run.jar"]

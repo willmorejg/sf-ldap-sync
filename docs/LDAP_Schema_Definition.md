@@ -358,8 +358,8 @@ ou=underwritingCompanies,dc=acmeinsurance,dc=com
 └── cn=Second Mutual Underwriters
 ```
 
-The companies are maintained by hand (cn=admin or phpLDAPadmin), and are readable by
-svc-sync and svc-auth. The constraint overlay accepts only DNs of companies directly under
+The companies are maintained by hand (InsureDirectory as svc-directory, or cn=admin and
+phpLDAPadmin), and are readable by svc-sync and svc-auth. The constraint overlay accepts only DNs of companies directly under
 `ou=underwritingCompanies`. Refint rewrites the value when a company is renamed, and
 removes it when the company is deleted. The schema allows the attribute only on agreements.
 The Salesforce sync sets it from an agreement field when
@@ -576,7 +576,7 @@ The LDAP schema uses the following principal object classes to implement the str
 
 - **Referential Integrity:** Deleting an account automatically cleans up all associated grants (`acmeAccountDN` values)
 - **Audit Trail:** Deactivated users remain in directory; never deleted. `acmeDeactivated` and `pwdAccountLockedTime` provide clear markers
-- **Role Separation:** Sync service runs as `svc-sync` (modify accounts, users, grants); Auth service runs as `svc-auth` (read-only, plus password verification via user bind)
+- **Role Separation:** Sync service runs as `svc-sync` (modify accounts, users, grants); Auth service runs as `svc-auth` (read-only, plus password verification via user bind); InsureDirectory runs as `svc-directory` (people, accounts, features and underwriting companies, and password resets with `pwdReset`; never OAuth clients or service accounts), and its users need the `directory` feature
 - **Policy Enforcement:** ACLs enforce role-based access; sync automation respects source ownership and safety thresholds
 
 ---

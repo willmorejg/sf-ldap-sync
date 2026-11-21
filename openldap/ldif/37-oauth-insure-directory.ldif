@@ -1,0 +1,14 @@
+# The InsureDirectory backend as a confidential OAuth client (backend-for-frontend:
+# the browser never sees a token). Loaded on first start when
+# DIRECTORY_CLIENT_SECRET is set; the backend gets the same secret.
+# Redirect URIs: the backend container (port 8080) and `ng serve` during development.
+dn: cn=insure-directory,ou=oauth-clients,ou=services,dc=acmeinsurance,dc=com
+objectClass: acmeOAuthClient
+cn: insure-directory
+displayName: InsureDirectory
+acmeRedirectUri: http://localhost:8080/auth/callback
+acmeRedirectUri: http://localhost:4200/auth/callback
+acmeGrantType: authorization_code
+acmeGrantType: refresh_token
+userPassword: __DIRECTORY_CLIENT_PW_HASH__
+pwdPolicySubentry: cn=oauth-clients,ou=policies,dc=acmeinsurance,dc=com

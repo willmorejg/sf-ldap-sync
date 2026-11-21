@@ -1,0 +1,55 @@
+@if (bare()) {
+  <router-outlet />
+} @else {
+  <div class="shell" [class.nav-open]="navOpen()">
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="topbar">
+      <button type="button" class="nav-toggle" (click)="navOpen.set(!navOpen())" [attr.aria-expanded]="navOpen()"
+              aria-controls="sidenav">☰<span class="sr-only"> Menu</span></button>
+      <a routerLink="/" class="brand">Insure<span>Directory</span></a>
+      @if (session.me(); as me) {
+        <div class="user">
+          <span title="{{ me.permissions.join(', ') }}">{{ me.name }}</span>
+          <button type="button" class="small" (click)="signOut()">Sign out</button>
+        </div>
+      }
+    </header>
+
+    <nav id="sidenav" class="sidenav" aria-label="Main" (click)="navOpen.set(false)">
+      <h2>People</h2>
+      <ul>
+        @for (k of people(); track k.id) {
+          <li><a [routerLink]="['/people', k.id]" routerLinkActive="active">{{ k.plural }}</a></li>
+        }
+      </ul>
+      <h2>Accounts</h2>
+      <ul>
+        <li><a routerLink="/accounts/agencies" routerLinkActive="active">Agencies &amp; books</a></li>
+        @for (k of otherAccounts(); track k.id) {
+          <li><a [routerLink]="['/accounts', k.id]" routerLinkActive="active">{{ k.plural }}</a></li>
+        }
+      </ul>
+      <h2>Reference data</h2>
+      <ul>
+        @for (k of reference(); track k.id) {
+          <li><a [routerLink]="['/reference', k.id]" routerLinkActive="active">{{ k.plural }}</a></li>
+        }
+      </ul>
+      <h2>Tools</h2>
+      <ul>
+        @if (session.canQuery()) {
+          <li><a routerLink="/query" routerLinkActive="active">Query builder</a></li>
+        }
+        <li><a routerLink="/audit" routerLinkActive="active">Audit log</a></li>
+      </ul>
+    </nav>
+
+    <main id="main" class="content" tabindex="-1">
+      @if (session.me()) {
+        <router-outlet />
+      } @else {
+        <p class="muted">Signing in…</p>
+      }
+    </main>
+  </div>
+}

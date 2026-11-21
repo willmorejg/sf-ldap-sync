@@ -11,7 +11,7 @@
 # |   `-- ou=clients      internally generated client IDs (by hand / CSV)
 # |-- ou=features        feature > permission tree, granted with acmeFeatureDN
 # |-- ou=underwritingCompanies  possible values of an agreement's acmeUnderwritingCompanyDN
-# |-- ou=services        svc-sync (write), svc-auth (read)
+# |-- ou=services        svc-sync (write), svc-auth (read), svc-directory (InsureDirectory app)
 # |   `-- ou=oauth-clients  applications registered with the auth service
 # `-- ou=policies        password policies: default, internal, agents, oauth-clients
 
@@ -85,6 +85,13 @@ objectClass: simpleSecurityObject
 cn: svc-sync
 description: Provisioning (the sync service); writes users, entitlements and accounts
 userPassword: __SVC_SYNC_PW_HASH__
+
+dn: cn=svc-directory,ou=services,dc=acmeinsurance,dc=com
+objectClass: organizationalRole
+objectClass: simpleSecurityObject
+cn: svc-directory
+description: InsureDirectory (frontend/); maintains people, accounts, features and underwriting companies
+userPassword: __SVC_DIRECTORY_PW_HASH__
 
 dn: cn=svc-auth,ou=services,dc=acmeinsurance,dc=com
 objectClass: organizationalRole

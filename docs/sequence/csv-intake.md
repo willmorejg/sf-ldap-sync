@@ -3,7 +3,7 @@
 Internal users, members (insureds) and other users are not in Salesforce. Until
 they have their own sources, they come from CSV files dropped into
 `inbox/internal`, `inbox/members` or `inbox/other`. The folder decides the user
-type. The route is `sync/src/main/resources/routes/csv-intake.camel.yaml`, and the
+type. The route is `backend/src/main/resources/routes/csv-intake.camel.yaml`, and the
 logic is in `CsvIntakeService`.
 
 Every row is an upsert, so dropping the same file again is safe. A row with

@@ -21,6 +21,10 @@ keys/
 /inbox/**
 !/inbox/**/
 !/inbox/**/.gitkeep
+# InsureDirectory's SQLite database (saved queries, audit log) when run outside the container.
+*.db
+*.db-shm
+*.db-wal
 
 ### Gradle ###
 .gradle/
@@ -59,8 +63,7 @@ logs/
 !.vscode/*.code-snippets
 .history/
 # Eclipse / VS Code Java language server (writes compiled output to bin/)
-/sync/bin/
-/auth/bin/
+/backend/bin/
 .classpath
 .project
 .settings/

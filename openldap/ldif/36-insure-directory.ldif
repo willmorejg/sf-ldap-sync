@@ -1,0 +1,31 @@
+# InsureDirectory (frontend/ and backend/), the directory maintenance app for CSRs. Loaded on
+# first start. The app checks the "directory" feature in the user's access token:
+#
+#   ou=features
+#   `-- cn=directory      the InsureDirectory app
+#       |-- cn=view-entries   browse people, accounts and reference data
+#       |-- cn=edit-entries   create, change and delete them; lock, unlock and reset passwords
+#       `-- cn=run-queries    run searches on the developer query page
+#
+# Grant cn=directory (all three) or single permissions through a user's
+# acmeFeatureDN, for example on an internal user (CSV features column: directory).
+dn: cn=directory,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmeFeature
+cn: directory
+displayName: InsureDirectory
+description: Directory maintenance app (frontend/)
+
+dn: cn=view-entries,cn=directory,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmePermission
+cn: view-entries
+displayName: View entries
+
+dn: cn=edit-entries,cn=directory,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmePermission
+cn: edit-entries
+displayName: Edit entries
+
+dn: cn=run-queries,cn=directory,ou=features,dc=acmeinsurance,dc=com
+objectClass: acmePermission
+cn: run-queries
+displayName: Run directory queries
